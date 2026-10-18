@@ -1,0 +1,28 @@
+RNG Lands 整合启动器 —— 需要的目录结构
+=====================================================================
+
+<起始目录>\
+├─ 启动_RNG_Lands_整合版.bat       ← 双击这个
+├─ 启动_RNG_Lands_随机_YAFSML.bat   ← 快捷方式：直接启动「有敌人随机」版
+├─ _launcher\                       ← 本仓库的脚本（自动读取，不要移动）
+│  ├─ rng_lands_launcher.ps1
+│  ├─ YAFSML.ini.tpl
+│  └─ default_pack.txt             ← 默认包记录（菜单 [1] 会改它）
+├─ RNG Lands\                       ← 自己准备：打过汉化补丁的 RNG Lands 包
+│  ├─ Ruby\
+│  │  ├─ recommended increased difficulty\   ← 含 regulation.bin / event / msg / script
+│  │  └─ vanilla difficulty\
+│  ├─ Apache\ ...
+│  └─ Pack 10\<配置名>\
+│     ├─ recommended increased difficulty\
+│     └─ vanilla difficulty\
+├─ randomizer\                      ← EldenRingRandomizer v0.12.2（工作目录 = 输出目录）
+│  ├─ EldenRingRandomizer.exe
+│  ├─ dll\RandomizerCrashFix.dll
+│  └─ spoiler_logs\
+└─ yafsml\                          ← YAFSML 加载器（YAFSML.exe / YAFSML.dll / YAFSML.ini）
+
+说明：
+- 启动器每次启动前会生成 yafsml\YAFSML.ini（[mod] 段按你的选择填），不要手改生成的 ini；
+  要改通用设置请改 _launcher\YAFSML.ini.tpl。
+- randomizer\ 里必须是「已经随机化过一次」的目录（没有 spoiler_logs 时菜单会提示先去随机化）。

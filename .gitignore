@@ -1,0 +1,10 @@
+_tmp_*
+*.tmp
+Thumbs.db
+desktop.ini
+.DS_Store
+__pycache__/
+*.pyc
+RNG Lands/
+randomizer/
+yafsml/
