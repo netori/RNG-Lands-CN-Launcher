@@ -21,9 +21,28 @@
 | `[3]` | **无敌人随机**：直接玩默认包（不经过随机器） |
 | `[4]` | 打开随机器，并把默认包路径**复制到剪贴板** |
 | `[5]` | 先换包，再启动无随机版 |
+| `[6]` | **设置游戏路径**（自动检测 / 浏览选择，会记住） |
 | `回车` | 直接启动无随机版（默认包） |
 
 旧的 `启动_RNG_Lands_随机_YAFSML.bat` 保留为「直接启动有敌人随机版」快捷方式。
+
+
+## 游戏路径（第一次启动选一次，不用手改文件）
+
+启动器**不再写死游戏路径**，按下面顺序找游戏：
+
+1. 读 `_launcher\game_path.txt`（你上次选择/自动检测后保存的路径）；
+2. 自动检测：Steam 库（`steamapps\common\ELDEN RING`）、**整合包附近**的 `ELDEN RING*` 目录、常见安装目录；
+3. 都找不到（或找到多个）时，启动时会弹出「设置游戏路径」界面。
+
+手动更换：主菜单按 **`[6]`**，可以：
+- 输入候选序号（自动检测到的列表）；
+- `F` 浏览文件夹（选**包含 `Game\eldenring.exe` 的那层**，或直接选 `Game` 文件夹也行）；
+- `E` 直接选中 `eldenring.exe`；
+- `A` 重新自动检测；`Q` 取消。
+
+> 选什么都会被自动换算成「版本根目录」（含 `Game` 子目录的那层），并保存到
+> `_launcher\game_path.txt`。换电脑 / 移动了游戏之后，重新按 `[6]` 选一次即可。
 
 ## 想做「有敌人随机」的流程（推荐）
 
@@ -57,7 +76,7 @@
   ```
   并把 `request=regulation:` 指到随机化输出的 `regulation.bin`。
 - 进游戏没变化：确认日志里 `[mod] added mod` 是哪个路径；无随机版应只有 `RNG_Lands_Base` 一行。
-- 游戏没启动：看日志；确认**不要用管理员身份运行**、游戏路径没变（启动器里 `$ErRoot`）。
+- 游戏没启动：看日志；确认**不要用管理员身份运行**、游戏路径正确（菜单 `[6]` 可以重新选/自动检测）。
 - 敌人刷出时崩溃：把 `_launcher\YAFSML.ini.tpl` 里 `randomizer_crashfix=...|early` 改成不带 `|early`，
   或注释掉那一行（模板是唯一来源，生成的 ini 不用手改）。
 
@@ -65,10 +84,12 @@
 
 - 配置模板：`_launcher\YAFSML.ini.tpl`（`@MOD_LINES@` / `@DLL_LINES@` 由启动器填充）。
 - 默认包记录：`_launcher\default_pack.txt`（一行相对路径）。
+- 游戏路径记录：`_launcher\game_path.txt`（一行绝对路径；删掉就会重新自动检测）。
 - 命令行调试：
   ```
   powershell -NoProfile -ExecutionPolicy Bypass -File _launcher\rng_lands_launcher.ps1 -Action list
   powershell ... -Action vanilla -DryRun      # 只打印将写入的配置
   powershell ... -Action rand -DryRun
   powershell ... -Action vanilla -NoLaunch    # 只写配置不启动
+  powershell ... -Action setgame -GamePath "D:\ELDEN RING\Game"   # 设置游戏路径
   ```

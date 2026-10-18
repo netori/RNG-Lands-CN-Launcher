@@ -7,13 +7,18 @@
 # 功能：
 #   [1] 选默认包（记住）      [2] 启动 有敌人随机（最近一次随机化输出）
 #   [3] 启动 无敌人随机（默认包直接玩）   [4] 打开随机器（包路径复制到剪贴板）
+#   [6] 设置游戏路径（自动检测 / 浏览选择；记住到 _launcher\game_path.txt）
+#
+# 游戏路径不写死：优先读 _launcher\game_path.txt，其次自动检测
+#（Steam 库 / 整合包附近 / 常见目录），仍找不到就弹选择框。
 
 [CmdletBinding()]
 param(
-    [ValidateSet('menu', 'list', 'select', 'rand', 'vanilla', 'randomizer', 'help')]
+    [ValidateSet('menu', 'list', 'select', 'rand', 'vanilla', 'randomizer', 'help', 'setgame')]
     [string]$Action = 'menu',
     [int]$Index = 0,
     [string]$Pack = '',
+    [string]$GamePath = '',
     [switch]$DryRun,
     [switch]$NoLaunch
 )
@@ -35,8 +40,8 @@ $DefaultPath = Join-Path $LauncherDir 'default_pack.txt'
 $RandomDir   = Join-Path $Paly 'randomizer'
 $RandomExe   = Join-Path $RandomDir 'EldenRingRandomizer.exe'
 $RandomLog   = Join-Path $YafDir 'log\YAFSML.log'
-$ErRoot      = 'F:\game\studygame\elden ring\ELDEN RING Tarnished Edition v1.17'
-$GameExe     = Join-Path $ErRoot 'Game\eldenring.exe'
+$GamePathFile = Join-Path $LauncherDir 'game_path.txt'
+$script:CacheGameRoot = $null
 
 # ---------------------------------------------------------------- 输出小工具
 function Write-Head([string]$Text) {
@@ -47,6 +52,231 @@ function Write-Ok([string]$Text)   { Write-Host ('  [OK] '   + $Text) -Foregroun
 function Write-Warn([string]$Text) { Write-Host ('  [提示] ' + $Text) -ForegroundColor Yellow }
 function Write-Err([string]$Text)  { Write-Host ('  [错误] ' + $Text) -ForegroundColor Red }
 function Pause-Any { Write-Host ''; [void](Read-Host '按回车返回菜单') }
+# ---------------------------------------------------------------- 游戏路径
+# 游戏路径不写死：优先读 _launcher\game_path.txt（用户选择/自动检测后保存），
+# 其次自动检测（Steam 库 / 整合包附近 / 常见目录），仍找不到就弹选择框。
+function Test-NormalizeGameRoot([string]$Path) {
+    if (-not $Path) { return $null }
+    $p = $Path.Trim()
+    $p = $p.Trim('"').Trim()
+    if (-not $p) { return $null }
+    try { $p = [System.IO.Path]::GetFullPath($p) } catch { return $null }
+    $p = $p.TrimEnd('\')
+    if ((Split-Path $p -Leaf) -ieq 'eldenring.exe') {
+        if (Test-Path -LiteralPath $p -PathType Leaf) { $p = Split-Path (Split-Path $p -Parent) -Parent } else { return $null }
+    }
+    if (Test-Path -LiteralPath (Join-Path $p 'eldenring.exe') -PathType Leaf) { return (Split-Path $p -Parent) }
+    if (Test-Path -LiteralPath (Join-Path $p 'Game\eldenring.exe') -PathType Leaf) { return $p }
+    return $null
+}
+
+function Get-SavedGameRoot {
+    if (-not (Test-Path -LiteralPath $GamePathFile)) { return $null }
+    $line = Get-Content -LiteralPath $GamePathFile -TotalCount 1 -Encoding UTF8 -ErrorAction SilentlyContinue
+    if (-not $line) { return $null }
+    return (Test-NormalizeGameRoot ([string]$line))
+}
+
+function Save-GameRoot([string]$Root) {
+    [System.IO.File]::WriteAllText($GamePathFile, $Root + "`r`n", (New-Object System.Text.UTF8Encoding($false)))
+    $script:CacheGameRoot = $Root
+    Write-Ok ('已保存游戏路径：' + $Root)
+}
+
+function Find-SteamGameRoots {
+    $roots = New-Object System.Collections.Generic.List[string]
+    $steamPath = $null
+    try { $steamPath = (Get-ItemProperty -Path 'HKCU:\Software\Valve\Steam' -Name SteamPath -ErrorAction Stop).SteamPath } catch { }
+    if (-not $steamPath) {
+        try { $steamPath = (Get-ItemProperty -Path 'HKLM:\SOFTWARE\WOW6432Node\Valve\Steam' -Name InstallPath -ErrorAction Stop).InstallPath } catch { }
+    }
+    $libs = New-Object System.Collections.Generic.List[string]
+    if ($steamPath) {
+        $libs.Add($steamPath)
+        $vdf = Join-Path $steamPath 'steamapps\libraryfolders.vdf'
+        if (Test-Path -LiteralPath $vdf) {
+            try {
+                $txt = Get-Content -LiteralPath $vdf -Raw -Encoding UTF8 -ErrorAction Stop
+                foreach ($m in [regex]::Matches($txt, '"path"\s+"([^"]+)"')) {
+                    $libs.Add(($m.Groups[1].Value -replace '\\\\', '\'))
+                }
+            } catch { }
+        }
+    }
+    foreach ($l in $libs) {
+        foreach ($sub in @('steamapps\common\ELDEN RING', 'steamapps\common\ELDEN RING\Game')) {
+            $r = Test-NormalizeGameRoot (Join-Path $l $sub)
+            if ($r) { $roots.Add($r) }
+        }
+    }
+    return @($roots | Select-Object -Unique)
+}
+
+function Find-NearbyGameRoots {
+    $roots = New-Object System.Collections.Generic.List[string]
+    $dir = $LauncherDir
+    for ($depth = 0; $depth -lt 4; $depth++) {
+        if (-not $dir) { break }
+        foreach ($pat in @('ELDEN RING*', '*ELDEN*', '*elden*', '*Ring*')) {
+            $dirs = Get-ChildItem -LiteralPath $dir -Directory -Filter $pat -ErrorAction SilentlyContinue | Select-Object -First 40
+            foreach ($d in $dirs) {
+                $r = Test-NormalizeGameRoot $d.FullName
+                if ($r) { $roots.Add($r) }
+                $subs = Get-ChildItem -LiteralPath $d.FullName -Directory -ErrorAction SilentlyContinue | Select-Object -First 40
+                foreach ($d2 in $subs) {
+                    $r2 = Test-NormalizeGameRoot $d2.FullName
+                    if ($r2) { $roots.Add($r2) }
+                }
+            }
+        }
+        $dir = Split-Path $dir -Parent
+    }
+    return @($roots | Select-Object -Unique)
+}
+
+function Find-CommonGameRoots {
+    $roots = New-Object System.Collections.Generic.List[string]
+    $drives = @()
+    try {
+        $drives = @(Get-PSDrive -PSProvider FileSystem -ErrorAction SilentlyContinue |
+            Where-Object { $_.Root -match '^[A-Za-z]:\\$' } | ForEach-Object { $_.Root })
+    } catch { }
+    $rels = @(
+        'SteamLibrary\steamapps\common\ELDEN RING',
+        'Steam\steamapps\common\ELDEN RING',
+        'SteamLibrary2\steamapps\common\ELDEN RING',
+        'Games\ELDEN RING',
+        'Game\ELDEN RING',
+        'Program Files (x86)\Steam\steamapps\common\ELDEN RING',
+        'Program Files\Steam\steamapps\common\ELDEN RING'
+    )
+    foreach ($d in $drives) {
+        foreach ($rel in $rels) {
+            $r = Test-NormalizeGameRoot (Join-Path $d $rel)
+            if ($r) { $roots.Add($r) }
+        }
+    }
+    return @($roots | Select-Object -Unique)
+}
+
+function Get-GameCandidates {
+    $all = New-Object System.Collections.Generic.List[string]
+    foreach ($r in (@(Find-SteamGameRoots) + @(Find-NearbyGameRoots) + @(Find-CommonGameRoots))) {
+        if ($r) { $all.Add($r) }
+    }
+    return @($all | Select-Object -Unique)
+}
+
+function Resolve-GameRoot([switch]$Refresh) {
+    if (-not $Refresh -and $script:CacheGameRoot) { return $script:CacheGameRoot }
+    $saved = Get-SavedGameRoot
+    if ($saved) { $script:CacheGameRoot = $saved; return $saved }
+    $cands = @(Get-GameCandidates)
+    if ($cands.Count -eq 1) {
+        $script:CacheGameRoot = $cands[0]
+        try {
+            [System.IO.File]::WriteAllText($GamePathFile, $cands[0] + "`r`n", (New-Object System.Text.UTF8Encoding($false)))
+        } catch { }
+        Write-Ok ('自动检测到游戏路径并已记住：' + $cands[0])
+        return $cands[0]
+    }
+    return $null
+}
+
+function Pick-FolderDialog([string]$Title) {
+    try { Add-Type -AssemblyName System.Windows.Forms | Out-Null } catch { return $null }
+    try {
+        $dlg = New-Object System.Windows.Forms.FolderBrowserDialog
+        $dlg.Description = $Title
+        $dlg.ShowNewFolderButton = $false
+        $cur = Resolve-GameRoot
+        if ($cur) { $dlg.SelectedPath = $cur }
+        if ($dlg.ShowDialog() -eq [System.Windows.Forms.DialogResult]::OK) { return $dlg.SelectedPath }
+    } catch { }
+    return $null
+}
+
+function Pick-ExeDialog([string]$Title) {
+    try { Add-Type -AssemblyName System.Windows.Forms | Out-Null } catch { return $null }
+    try {
+        $dlg = New-Object System.Windows.Forms.OpenFileDialog
+        $dlg.Title = $Title
+        $dlg.Filter = 'eldenring.exe|eldenring.exe|所有文件|*.*'
+        $cur = Resolve-GameRoot
+        if ($cur) { $dlg.InitialDirectory = (Join-Path $cur 'Game') }
+        if ($dlg.ShowDialog() -eq [System.Windows.Forms.DialogResult]::OK) { return $dlg.FileName }
+    } catch { }
+    return $null
+}
+
+function Set-GameRootInteractive {
+    while ($true) {
+        $cur = Get-SavedGameRoot
+        $cands = @(Get-GameCandidates)
+        Clear-Host
+        Write-Host '==============================================================' -ForegroundColor Cyan
+        Write-Host '   设置 Elden Ring 游戏路径（只需选一次，会记住）' -ForegroundColor Cyan
+        Write-Host '==============================================================' -ForegroundColor Cyan
+        if ($cur) {
+            Write-Host ('  当前：' + $cur) -ForegroundColor Green
+        } else {
+            $resolved = Resolve-GameRoot
+            if ($resolved) { Write-Host ('  当前：' + $resolved) -ForegroundColor Green }
+            else { Write-Host '  当前：未设置' -ForegroundColor Yellow }
+        }
+        Write-Host ''
+        if ($cands.Count -gt 0) {
+            Write-Host '  自动检测到的候选：'
+            for ($i = 0; $i -lt $cands.Count; $i++) {
+                Write-Host ('   [{0}] {1}' -f ($i + 1), $cands[$i]) -ForegroundColor White
+            }
+        } else {
+            Write-Host '  自动检测：没有找到（可手动浏览）' -ForegroundColor DarkGray
+        }
+        Write-Host ''
+        Write-Host '   输入序号 = 使用该候选'
+        Write-Host '   [F] 浏览文件夹（选包含 Game\eldenring.exe 的目录，或 Game 目录本身）'
+        Write-Host '   [E] 直接选择 eldenring.exe'
+        Write-Host '   [A] 重新自动检测'
+        Write-Host '   [Q] 取消'
+        Write-Host '=============================================================='
+        $sel = Read-Host '请选择'
+        if ($null -eq $sel) { return $false }
+        $sel = ([string]$sel).Trim()
+        if ($sel -eq '') { continue }
+        if ($sel -match '^[qQ]$') { return $false }
+        if ($sel -match '^[aA]$') { $script:CacheGameRoot = $null; continue }
+        if ($sel -match '^[fF]$') {
+            $picked = Pick-FolderDialog '选择 Elden Ring 目录（包含 Game\eldenring.exe 的那层，或直接选 Game 文件夹）'
+            if (-not $picked) { continue }
+            $root = Test-NormalizeGameRoot $picked
+            if ($root) { Save-GameRoot $root; return $true }
+            Write-Err ('这个目录里没找到 Game\eldenring.exe：' + $picked)
+            [void](Read-Host '按回车重试')
+            continue
+        }
+        if ($sel -match '^[eE]$') {
+            $picked = Pick-ExeDialog '选择 eldenring.exe'
+            if (-not $picked) { continue }
+            $root = Test-NormalizeGameRoot $picked
+            if ($root) { Save-GameRoot $root; return $true }
+            Write-Err ('这个 exe 的位置不像 Elden Ring 安装：' + $picked)
+            [void](Read-Host '按回车重试')
+            continue
+        }
+        $n = 0
+        if ([int]::TryParse($sel, [ref]$n) -and $n -ge 1 -and $n -le $cands.Count) {
+            Save-GameRoot $cands[$n - 1]
+            return $true
+        }
+        $root = Test-NormalizeGameRoot $sel
+        if ($root) { Save-GameRoot $root; return $true }
+        Write-Err ('无法识别（可输入序号、[F]/[E]/[A]/[Q]，或粘贴路径）：' + $sel)
+        [void](Read-Host '按回车重试')
+    }
+    return $false
+}
+
 
 # ---------------------------------------------------------------- 包列表
 function Get-Packs {
@@ -169,8 +399,16 @@ function Show-IniDry([string]$ModLines, [string]$DllLines) {
 
 # ---------------------------------------------------------------- 启动游戏
 function Start-YafGame {
-    if (-not (Test-Path -LiteralPath $GameExe)) { Write-Err ('找不到游戏：' + $GameExe); return $false }
     if (-not (Test-Path -LiteralPath $YafExe))  { Write-Err ('找不到 YAFSML：' + $YafExe); return $false }
+    $erRoot = Resolve-GameRoot
+    if (-not $erRoot) {
+        Write-Warn '还没有可用的游戏路径（未设置，或自动检测到多个候选）。先选一下游戏目录：'
+        if (-not (Set-GameRootInteractive)) { Write-Err '未选择游戏路径，取消启动。'; return $false }
+        $erRoot = Resolve-GameRoot -Refresh
+    }
+    $gameExe = Join-Path $erRoot 'Game\eldenring.exe'
+    if (-not (Test-Path -LiteralPath $gameExe)) { Write-Err ('游戏路径无效（找不到 Game\eldenring.exe）：' + $erRoot); return $false }
+    Write-Host ('  游戏：' + $gameExe)
     if ($NoLaunch) {
         Write-Warn '[-NoLaunch] 只写配置，不启动 YAFSML。'
         return $true
@@ -181,7 +419,7 @@ function Start-YafGame {
         $proc | ForEach-Object { try { $_.Kill() } catch { } }
         Start-Sleep -Milliseconds 1200
     }
-    $arg = @('--game-path', ('"' + $ErRoot + '"'))
+    $arg = @('--game-path', ('"' + $erRoot + '"'))
     Start-Process -FilePath $YafExe -ArgumentList $arg -WorkingDirectory $YafDir -WindowStyle Minimized
     Write-Host ''
     Write-Host '  已启动 YAFSML，等待 eldenring.exe（最多 60 秒）...'
@@ -321,6 +559,9 @@ function Show-Status {
     $rel = Get-DefaultRel $packs
     $latest = Get-LatestRandom
     Write-Host ('  可玩包数   : ' + $packs.Count)
+    $gameRoot = Resolve-GameRoot
+    if ($gameRoot) { Write-Host ('  游戏路径   : ' + $gameRoot) }
+    else { Write-Host '  游戏路径   : （未设置 / 有多个候选，按 [6] 选择）' -ForegroundColor Yellow }
     if ($rel) { Write-Host ('  默认包     : ' + ($rel -replace '\\', ' / ')) } else { Write-Host '  默认包     : （未设置）' }
     if ($latest) {
         if ($latest.HasEnemy) { $tag = '有敌人随机' } else { $tag = '未勾选敌人随机' }
@@ -354,6 +595,7 @@ function Show-Menu {
         Write-Host ' [3] 启动 · 无敌人随机（直接玩默认包，不经过随机器）'
         Write-Host ' [4] 打开随机器（把默认包路径复制到剪贴板）'
         Write-Host ' [5] 先换默认包，再启动无随机版'
+        Write-Host ' [6] 设置游戏路径（自动检测 / 浏览选择，会记住）'
         Write-Host ' [0] 退出'
         Write-Host ' 直接回车 = [3] 启动无敌人随机（默认包）'
         Write-Host '=============================================================='
@@ -365,6 +607,7 @@ function Show-Menu {
             '3'   { Invoke-Vanilla; Pause-Any }
             '4'   { Invoke-Randomizer; Pause-Any }
             '5'   { if (Select-Pack (Get-Packs)) { Invoke-Vanilla }; Pause-Any }
+            '6'   { [void](Set-GameRootInteractive); Pause-Any }
             '0'   { return }
             default { }
         }
@@ -382,6 +625,7 @@ function Show-Help {
     Write-Host '  ... -Action vanilla -DryRun        （只打印将写入的配置）'
     Write-Host '  ... -Action rand -DryRun'
     Write-Host '  ... -Action vanilla -NoLaunch      （只写配置不启动）'
+    Write-Host '  ... -Action setgame -GamePath "D:\ELDEN RING\Game"   （设置/修改游戏路径）'
 }
 
 # ---------------------------------------------------------------- 入口
@@ -402,6 +646,15 @@ try {
                 Write-Ok ('默认包已设为：' + $packs[$Index - 1].Label)
             } else {
                 [void](Select-Pack $packs)
+            }
+        }
+        'setgame'    {
+            if ($GamePath) {
+                $root = Test-NormalizeGameRoot $GamePath
+                if (-not $root) { Write-Err ('路径无效（需要包含 Game\eldenring.exe）：' + $GamePath); exit 1 }
+                Save-GameRoot $root
+            } else {
+                [void](Set-GameRootInteractive)
             }
         }
         'rand'       { Invoke-Rand }

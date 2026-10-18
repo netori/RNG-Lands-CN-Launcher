@@ -23,6 +23,8 @@ RNG Lands 整合启动器 —— 需要的目录结构
 └─ yafsml\                          ← YAFSML 加载器（YAFSML.exe / YAFSML.dll / YAFSML.ini）
 
 说明：
+- 游戏可以装在任意位置：启动器会自动检测（整合包附近 / Steam 库 / 常见目录），
+  找不到就用菜单 [6] 选择，选择结果记在 _launcher\game_path.txt；不需要把本整合包放进游戏目录。
 - 启动器每次启动前会生成 yafsml\YAFSML.ini（[mod] 段按你的选择填），不要手改生成的 ini；
   要改通用设置请改 _launcher\YAFSML.ini.tpl。
 - randomizer\ 里必须是「已经随机化过一次」的目录（没有 spoiler_logs 时菜单会提示先去随机化）。
