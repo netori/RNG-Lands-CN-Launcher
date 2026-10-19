@@ -6,6 +6,8 @@ YAFSML 注入式加载器统一起启动的小工具：
 - 想玩哪个包就选哪个包（支持 16 个变体 × 2 难度，共 32 个包）；
 - 启动分两种模式：**有敌人随机**（叠随机器输出）和 **无敌人随机**（直接玩原包）；
 - 默认包会记住，双击 → 回车即可玩；
+- **可以叠加其他 mod**：菜单 `[7]` 添加任意 mod 目录（低 / 高优先级），勾选「随机化合并」后
+  `[4]` 打开的随机器会生成一份合并清单（Mod Engine toml），把附加 mod 和 RNG Lands 包一起合并；
 - **游戏路径不用手填**：首次自动检测（Steam 库 / 整合包附近 / 常见目录），
   找不到或想换时用菜单 `[6]` 选择，结果保存在 `_launcher\game_path.txt`；
 - YAFSML 是运行时注入，**游戏目录一个文件都不会改**；
@@ -40,6 +42,7 @@ YAFSML 注入式加载器统一起启动的小工具：
  [4] 打开随机器（默认包路径复制到剪贴板）
  [5] 先换默认包，再启动无随机版
  [6] 设置游戏路径（自动检测 / 浏览选择，会记住）
+ [7] 其他 mod（叠加别的 mod；含 regulation 的可随机化时合并）
  [0] 退出；直接回车 = [3]
 ```
 
@@ -64,6 +67,35 @@ YAFSML 注入式加载器统一起启动的小工具：
 
 > 换电脑、移动游戏目录后按 `[6]` 重选一次即可；删掉 `_launcher\game_path.txt` 会重新自动检测。
 
+### 叠加其他 mod（菜单 `[7]`）
+
+除了 RNG Lands 包，还可以再叠别的 mod（贴图、武器、骨灰、UI 等）。菜单 `[7]`：
+
+```
+ [A] 添加 mod（粘贴/浏览 mod 目录，自动识别其中真正的 mod 根）
+ [E] 启用 / 停用
+ [P] 切换优先级：低（被 RNG Lands 包覆盖） / 高（覆盖 RNG Lands 包和随机结果）
+ [M] 切换「随机化时合并」（只有开着的 mod 才会进合并清单）
+ [U]/[D] 上移 / 下移（同类里的先后，后声明的覆盖先声明的）
+ [R] 删除    [Q] 返回
+```
+
+两种玩法：
+
+- **只叠加、不随机**：把 mod 的优先级设成「低」（贴图/UI 之类通常够了），直接 `[3]` 启动。
+  `[mod]` 顺序：低优先级 mod → `RNG_Lands_Base` → 高优先级 mod。
+- **和随机化一起合并**：给 mod 打开 `[M]`，按 `[4]` 打开随机器 —— 启动器会生成
+  `_launcher\merge_mods.toml` 并把它的路径复制到剪贴板；在随机器里 **Merge other mod → 选这个 .toml**。
+  合并顺序（先声明者优先）：高优先级 mod → `RNG_Lands_Base` → 低优先级 mod。
+
+注意事项：
+
+- 含 `regulation.bin` 的 mod 与 RNG Lands 的 `regulation.bin` **天然冲突**：设为低优先级会被覆盖，
+  设为高优先级又会盖掉 RNG Lands 的改动（菜单里会显示红/黄提示）；
+- 随机器只能合并「文件级可合并」的 mod，部分 mod（改 param 之外的二进制/脚本）合并后可能无效或被跳过 ——
+  以随机化日志与游戏内实际效果为准；
+- 想要「有敌人随机 + 其他 mod」，先确认随机器那次随机化是**用带 merge 清单的方式**做的，再按 `[2]` 启动。
+
 ## 实现要点
 
 - `_launcher\rng_lands_launcher.ps1`：菜单、包扫描、默认包记录、读随机器日志、生成 ini、启动。
@@ -71,6 +103,9 @@ YAFSML 注入式加载器统一起启动的小工具：
 - 两种模式的 `[mod]`：
   - 有敌人随机：`RNG_Lands_Base=<来源包>` + `RNG_Lands_Randomizer=<randomizer>`（后者最后声明、优先级最高）
   - 无敌人随机：只有 `RNG_Lands_Base=<默认包>`
+- 附加 mod（菜单 `[7]` 维护 `_launcher\extra_mods.json`）会插进 `[mod]`：
+  低优先级在基础包**之前**、高优先级在最后；随机化合并清单 `_launcher\merge_mods.toml`
+  是高优先级 mod → `RNG_Lands_Base` → 低优先级 mod（first-wins）。
 - 有随机模式会给 `RandomizerCrashFix.dll` 配 `|early`（基础+DLC 敌人一起随机时防崩溃）。
 - 独立存档/不写 regulation 标记：`replace_save_filename=.cnv` + `prevent_regulation_save_write=1`。
 
@@ -80,6 +115,8 @@ YAFSML 注入式加载器统一起启动的小工具：
   `INFO: [mod] added mod RNG_Lands_Base ...`（有随机模式还有 `RNG_Lands_Randomizer`）。
 - 游戏没启动：**不要用管理员身份运行**；游戏路径可用菜单 `[6]` 重新检测/选择。
 - 敌人刷出时崩溃：把 `_launcher\YAFSML.ini.tpl` 里 `randomizer_crashfix=...|early` 改成不带 `|early`。
+- 附加 mod 没生效：看 `yafsml\log\YAFSML.log` 里有没有 `Extra_low_*` / `Extra_high_*` 的 `[mod] added mod` 行；
+  再确认优先级：低优先级会被 RNG Lands 包同名文件覆盖。
 - 更多见 [`启动说明_RNG_Lands_整合版.md`](启动说明_RNG_Lands_整合版.md)。
 
 ## 授权 / 声明

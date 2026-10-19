@@ -9,3 +9,5 @@ RNG Lands/
 randomizer/
 yafsml/
 _launcher/game_path.txt
+_launcher/extra_mods.json
+_launcher/merge_mods.toml

@@ -8,17 +8,20 @@
 #   [1] 选默认包（记住）      [2] 启动 有敌人随机（最近一次随机化输出）
 #   [3] 启动 无敌人随机（默认包直接玩）   [4] 打开随机器（包路径复制到剪贴板）
 #   [6] 设置游戏路径（自动检测 / 浏览选择；记住到 _launcher\game_path.txt）
+#   [7] 其他 mod（附加加载：可叠别的 mod；含 regulation 的可在随机化时合并）
 #
 # 游戏路径不写死：优先读 _launcher\game_path.txt，其次自动检测
 #（Steam 库 / 整合包附近 / 常见目录），仍找不到就弹选择框。
 
 [CmdletBinding()]
 param(
-    [ValidateSet('menu', 'list', 'select', 'rand', 'vanilla', 'randomizer', 'help', 'setgame')]
+    [ValidateSet('menu', 'list', 'select', 'rand', 'vanilla', 'randomizer', 'help', 'setgame',
+             'extlist', 'extadd', 'extremove', 'exttoggle', 'extpriority', 'extmerge')]
     [string]$Action = 'menu',
     [int]$Index = 0,
     [string]$Pack = '',
     [string]$GamePath = '',
+    [string]$ModPath = '',
     [switch]$DryRun,
     [switch]$NoLaunch
 )
@@ -41,6 +44,8 @@ $RandomDir   = Join-Path $Paly 'randomizer'
 $RandomExe   = Join-Path $RandomDir 'EldenRingRandomizer.exe'
 $RandomLog   = Join-Path $YafDir 'log\YAFSML.log'
 $GamePathFile = Join-Path $LauncherDir 'game_path.txt'
+$ExtraModsFile = Join-Path $LauncherDir 'extra_mods.json'
+$MergeToml     = Join-Path $LauncherDir 'merge_mods.toml'
 $script:CacheGameRoot = $null
 
 # ---------------------------------------------------------------- 输出小工具
@@ -278,6 +283,343 @@ function Set-GameRootInteractive {
 }
 
 
+# ---------------------------------------------------------------- 其他 mod
+# 往整合里叠加别的 mod 目录：启动时写进 YAFSML 的 [mod] 段（YAFSML 后声明覆盖先声明）。
+#   low  = 排在 RNG Lands 基础包/随机器输出之前 → 冲突文件被它们覆盖（安全默认）
+#   high = 排在之后 → 覆盖随机化结果（适合 UI / 贴图 / 字体 / 音效等）
+#   merge= true 时，打开随机器会生成 ModEngine 格式的合并清单（merge_mods.toml），
+#          可在随机器「Merge other mod」里一次合并列表里所有 mod。
+# 含 regulation.bin 的 mod：启动时只能按优先级“整个替换/被替换”，不能数值合并；
+# 要让它和 RNG Lands 的参数同时生效，需要在随机化时合并（[M] 开关），或接受一方覆盖。
+function Get-ExtraMods {
+    if (-not (Test-Path -LiteralPath $ExtraModsFile)) { return @() }
+    $raw = ''
+    try { $raw = Get-Content -LiteralPath $ExtraModsFile -Raw -Encoding UTF8 -ErrorAction Stop } catch { return @() }
+    if (-not $raw -or -not $raw.Trim()) { return @() }
+    $data = $null
+    try { $data = $raw | ConvertFrom-Json } catch {
+        Write-Warn ('其他 mod 配置解析失败（按空处理）：' + $_.Exception.Message)
+        return @()
+    }
+    $list = @()
+    if ($data -is [System.Array]) { $list = @($data) }
+    elseif ($null -ne $data.mods) { $list = @($data.mods) }
+    $out = @()
+    foreach ($m in $list) {
+        if ($null -eq $m) { continue }
+        $enabled = $true
+        if ($null -ne $m.enabled) { $enabled = [bool]$m.enabled }
+        $priority = 'low'
+        if ([string]$m.priority -eq 'high') { $priority = 'high' }
+        $merge = $false
+        if ($null -ne $m.merge) { $merge = [bool]$m.merge }
+        $out += [pscustomobject]@{
+            name     = [string]$m.name
+            path     = [string]$m.path
+            enabled  = $enabled
+            priority = $priority
+            merge    = $merge
+        }
+    }
+    return @($out)
+}
+
+function Save-ExtraMods($Mods) {
+    $arr = @()
+    foreach ($m in @($Mods)) {
+        if ($null -eq $m) { continue }
+        $arr += [ordered]@{
+            name     = [string]$m.name
+            path     = [string]$m.path
+            enabled  = [bool]$m.enabled
+            priority = [string]$m.priority
+            merge    = [bool]$m.merge
+        }
+    }
+    $obj = [ordered]@{ version = 2; mods = @($arr) }
+    $json = $obj | ConvertTo-Json -Depth 6
+    [System.IO.File]::WriteAllText($ExtraModsFile, $json + "`r`n", (New-Object System.Text.UTF8Encoding($false)))
+}
+
+function Test-ModRootLike([string]$Dir) {
+    if (-not $Dir) { return $false }
+    if (-not (Test-Path -LiteralPath $Dir -PathType Container)) { return $false }
+    if (Test-Path -LiteralPath (Join-Path $Dir 'regulation.bin') -PathType Leaf) { return $true }
+    $marks = @('event','map','msg','script','sfx','chr','parts','menu','action','asset','material','param','sound','remap','font','shader')
+    $hits = 0
+    foreach ($m in $marks) { if (Test-Path -LiteralPath (Join-Path $Dir $m)) { $hits++ } }
+    return ($hits -ge 2)
+}
+
+function Resolve-ModRoot([string]$Path) {
+    if (-not $Path) { return $null }
+    $p = ([string]$Path).Trim().Trim('"').Trim()
+    if (-not $p) { return $null }
+    if (-not [System.IO.Path]::IsPathRooted($p)) { $p = Join-Path (Get-Location).Path $p }
+    if (Test-Path -LiteralPath $p -PathType Leaf) { $p = [System.IO.Path]::GetDirectoryName($p) }
+    try { $p = [System.IO.Path]::GetFullPath($p) } catch { return $null }
+    $p = $p.TrimEnd('\')
+    if (-not (Test-Path -LiteralPath $p -PathType Container)) { return $null }
+    # 1) 本身就是 mod 根（含 regulation.bin，或至少两个标准资产目录）
+    if (Test-ModRootLike $p) { return $p }
+    # 2) 里面是 mod 子目录（Nexus 常见解压结构：<Mod>\mod\...）
+    $modSub = Join-Path $p 'mod'
+    if (Test-Path -LiteralPath $modSub -PathType Container) {
+        $inner = @(Get-ChildItem -LiteralPath $modSub -Force -ErrorAction SilentlyContinue | Select-Object -First 1)
+        if ($inner.Count -gt 0) { return $modSub }
+    }
+    # 3) 单层包装：<解压目录>\<Mod>\mod\... 或 <解压目录>\<Mod>\...
+    $children = @(Get-ChildItem -LiteralPath $p -Directory -ErrorAction SilentlyContinue | Select-Object -First 12)
+    foreach ($c in $children) {
+        $cm = Join-Path $c.FullName 'mod'
+        if (Test-Path -LiteralPath $cm -PathType Container) {
+            $inner = @(Get-ChildItem -LiteralPath $cm -Force -ErrorAction SilentlyContinue | Select-Object -First 1)
+            if ($inner.Count -gt 0) { return $cm }
+        }
+    }
+    foreach ($c in $children) {
+        if (Test-ModRootLike $c.FullName) { return $c.FullName }
+    }
+    return $null
+}
+
+function Get-ExtraModInfo($Mod) {
+    $exists = $false
+    if ($Mod.path -and (Test-Path -LiteralPath $Mod.path -PathType Container)) { $exists = $true }
+    $hasReg = $false
+    $hasCore = $false
+    if ($exists) {
+        if (Test-Path -LiteralPath (Join-Path $Mod.path 'regulation.bin') -PathType Leaf) { $hasReg = $true }
+        foreach ($d in @('msg','script','event','map')) {
+            if (Test-Path -LiteralPath (Join-Path $Mod.path $d)) { $hasCore = $true }
+        }
+    }
+    return [pscustomobject]@{ Exists = $exists; HasRegulation = $hasReg; HasCoreData = $hasCore }
+}
+
+function Write-ExtraModNotes($Mod) {
+    $info = Get-ExtraModInfo $Mod
+    if (-not $info.Exists) { Write-Host '        ! 目录不在了（请删除或重新添加）' -ForegroundColor Red; return }
+    if ($info.HasRegulation) {
+        if ($Mod.priority -eq 'high') {
+            Write-Host '        ! 含 regulation.bin 且为「高」：会覆盖随机化输出的参数表（随机化可能失效）' -ForegroundColor Red
+        } else {
+            Write-Host '        · 含 regulation.bin：「低」时它的参数表会被 RNG Lands / 随机器输出覆盖；要让它生效请改「高」或勾选「随机化合并」' -ForegroundColor Yellow
+        }
+    } elseif ($Mod.priority -eq 'high' -and $info.HasCoreData) {
+        Write-Host '        · 含文本/脚本/事件类文件且为「高」：会覆盖随机化后的内容；若只想补充素材，建议改「低」' -ForegroundColor Yellow
+    }
+}
+
+function Add-ExtraMod([string]$Path) {
+    $root = Resolve-ModRoot $Path
+    if (-not $root) {
+        Write-Err ('不像是 mod 目录（没找到 regulation.bin 或 mod 资产目录）：' + $Path)
+        Write-Host '        支持：<mod 根>（含 regulation.bin / event / msg 等）、<mod 根>\mod、下载解压后的单层包装目录。' -ForegroundColor DarkGray
+        return $false
+    }
+    $mods = @(Get-ExtraMods)
+    foreach ($m in $mods) {
+        if ($m.path -and ($m.path.TrimEnd('\') -ieq $root.TrimEnd('\'))) {
+            Write-Warn ('这个 mod 已经在列表里了：' + $root)
+            return $false
+        }
+    }
+    $name = [System.IO.Path]::GetFileName($root)
+    if ($name -ieq 'mod') { $name = [System.IO.Path]::GetFileName([System.IO.Path]::GetDirectoryName($root)) }
+    $info = Get-ExtraModInfo ([pscustomobject]@{ path = $root })
+    $entry = [pscustomobject]@{
+        name     = $name
+        path     = $root
+        enabled  = $true
+        priority = $(if ($info.HasRegulation) { 'low' } else { 'high' })
+        merge    = $false
+    }
+    $mods += $entry
+    Save-ExtraMods $mods
+    Write-Ok ('已添加其他 mod：' + $name)
+    Write-Host ('        目录：' + $root) -ForegroundColor DarkGray
+    Write-ExtraModNotes $entry
+    return $true
+}
+
+function Add-ExtraModInteractive {
+    Write-Host ''
+    Write-Host '  输入其他 mod 的目录（可直接粘贴路径）；B = 浏览文件夹；Q = 取消'
+    Write-Host '  支持：<mod 根>（含 regulation.bin / 资产目录）、<mod 根>\mod、单层包装目录。'
+    $text = Read-Host '  路径'
+    if ($null -eq $text) { return $false }   # 输入流结束
+    $t = ([string]$text).Trim().Trim('"').Trim()
+    if (-not $t) { return $false }
+    if ($t -match '^[qQ]$') { return $false }
+    if ($t -match '^[bB]$') {
+        $t = Pick-FolderDialog '选择其他 mod 的目录（含 regulation.bin 或 mod 子目录的那层）'
+        if (-not $t) { return $false }
+    }
+    return (Add-ExtraMod $t)
+}
+
+function Update-ExtraMods([string]$Op, [int]$Index) {
+    $mods = @(Get-ExtraMods)
+    if ($mods.Count -eq 0) { Write-Warn '还没有添加任何 mod（先按 [A] 添加）'; return $false }
+    if ($Index -lt 1 -or $Index -gt $mods.Count) { Write-Err ('序号超出范围（1 - ' + $mods.Count + '）'); return $false }
+    $m = $mods[$Index - 1]
+    switch ($Op) {
+        'toggle' {
+            $m.enabled = -not $m.enabled
+            $state = $(if ($m.enabled) { '启用' } else { '停用' })
+            Write-Ok ('已' + $state + '：' + $m.name)
+        }
+        'priority' {
+            if ($m.priority -eq 'high') { $m.priority = 'low' } else { $m.priority = 'high' }
+            $prio = $(if ($m.priority -eq 'high') { '高' } else { '低' })
+            Write-Ok ('优先级已设为「' + $prio + '」：' + $m.name)
+        }
+        'merge' {
+            $m.merge = -not $m.merge
+            if ($m.merge) { Write-Ok ('已加入随机化合并清单：' + $m.name) }
+            else { Write-Ok ('已移出随机化合并清单：' + $m.name) }
+        }
+        'up' {
+            if ($Index -le 1) { Write-Warn '已经在最上面了'; return $false }
+            $mods[$Index - 1] = $mods[$Index - 2]
+            $mods[$Index - 2] = $m
+            Write-Ok ('已上移：' + $m.name)
+        }
+        'down' {
+            if ($Index -ge $mods.Count) { Write-Warn '已经在最下面了'; return $false }
+            $mods[$Index - 1] = $mods[$Index]
+            $mods[$Index] = $m
+            Write-Ok ('已下移：' + $m.name)
+        }
+        'remove' {
+            $new = @()
+            for ($i = 0; $i -lt $mods.Count; $i++) {
+                if ($i -eq ($Index - 1)) { continue }
+                $new += $mods[$i]
+            }
+            $mods = $new
+            Write-Ok ('已删除：' + $m.name)
+        }
+        default { Write-Err ('未知操作：' + $Op); return $false }
+    }
+    Save-ExtraMods $mods
+    return $true
+}
+
+function Read-ExtraModIndex($Mods) {
+    if ($Mods.Count -eq 0) { Write-Warn '列表是空的'; return 0 }
+    $text = Read-Host '  序号（直接回车取消）'
+    if (-not $text) { return 0 }
+    $n = 0
+    if (-not [int]::TryParse(([string]$text).Trim(), [ref]$n)) { Write-Warn '输入的不是数字'; return 0 }
+    if ($n -lt 1 -or $n -gt $Mods.Count) { Write-Warn '序号超出范围'; return 0 }
+    return $n
+}
+
+function Get-ExtraModLines([string]$Priority) {
+    $lines = New-Object System.Collections.Generic.List[string]
+    $mods = @(Get-ExtraMods)
+    $n = 0
+    foreach ($m in $mods) {
+        $n++
+        if (-not $m.enabled) { continue }
+        if ($m.priority -ne $Priority) { continue }
+        $role = '低优先级：被基础包/随机结果覆盖'
+        if ($Priority -eq 'high') { $role = '高优先级：覆盖随机结果' }
+        $lines.Add('; 附加 mod（' + $role + '）：' + $m.name)
+        $lines.Add('Extra_' + $Priority + '_' + $n + '=' + $m.path)
+    }
+    return @($lines)
+}
+
+function Format-TomlModEntry([string]$Name, [string]$Path) {
+    $n = ([string]$Name).Replace('\', '\\').Replace('"', '\"')
+    $p = ([string]$Path).Replace('\', '\\').Replace('"', '\"')
+    return ('{ enabled = true, name = "' + $n + '", path = "' + $p + '" }')
+}
+
+function New-MergeToml([string]$BaseFull) {
+    $extras = @((Get-ExtraMods) | Where-Object { $_.enabled -and $_.merge })
+    $entries = New-Object System.Collections.Generic.List[string]
+    foreach ($m in $extras) {
+        if ($m.priority -eq 'high') { $entries.Add((Format-TomlModEntry $m.name $m.path)) }
+    }
+    $entries.Add((Format-TomlModEntry 'RNG_Lands_Base' $BaseFull))
+    foreach ($m in $extras) {
+        if ($m.priority -ne 'high') { $entries.Add((Format-TomlModEntry $m.name $m.path)) }
+    }
+    $lines = New-Object System.Collections.Generic.List[string]
+    $lines.Add('# 由 RNG Lands 整合启动器自动生成（每次打开随机器时重写）')
+    $lines.Add('# 用法：EldenRingRandomizer -> Merge other mod -> 选这个 .toml 文件')
+    $lines.Add('# 顺序 = ModEngine 优先级（排前面的冲突文件优先）；RNG_Lands_Base 是当前默认包')
+    $lines.Add('')
+    $lines.Add('[modengine]')
+    $lines.Add('debug = false')
+    $lines.Add('external_dlls = []')
+    $lines.Add('')
+    $lines.Add('[extension.mod_loader]')
+    $lines.Add('enabled = true')
+    $lines.Add('loose_params = false')
+    $lines.Add('mods = [')
+    for ($i = 0; $i -lt $entries.Count; $i++) {
+        $tail = ','
+        if ($i -eq ($entries.Count - 1)) { $tail = '' }
+        $lines.Add('    ' + $entries[$i] + $tail)
+    }
+    $lines.Add(']')
+    return (($lines -join "`r`n") + "`r`n")
+}
+
+function Show-ExtraModsMenu {
+    while ($true) {
+        $mods = @(Get-ExtraMods)
+        Clear-Host
+        Write-Host '==============================================================' -ForegroundColor Cyan
+        Write-Host '  其他 mod（附加加载 / 随机化合并）' -ForegroundColor Cyan
+        Write-Host '==============================================================' -ForegroundColor Cyan
+        Write-Host '  「低」= 排在 RNG Lands/随机器输出之前：冲突文件被覆盖（安全默认）'
+        Write-Host '  「高」= 排在之后：会覆盖随机化结果（适合 UI / 贴图 / 字体 / 音效）'
+        Write-Host '  [M] 只影响「打开随机器」时生成的合并清单，不改变启动顺序。'
+        Write-Host '--------------------------------------------------------------'
+        if ($mods.Count -eq 0) {
+            Write-Host '  （还没有添加任何 mod）' -ForegroundColor DarkGray
+        } else {
+            $i = 0
+            foreach ($m in $mods) {
+                $i++
+                $state = $(if ($m.enabled) { '启用' } else { '停用' })
+                $prio = $(if ($m.priority -eq 'high') { '高' } else { '低' })
+                $mergeTag = ''
+                if ($m.merge) { $mergeTag = ' [随机化合并]' }
+                Write-Host ('  {0,3}. [{1}] 优先级:{2}{3}  {4}' -f $i, $state, $prio, $mergeTag, $m.name)
+                Write-Host ('        ' + $m.path) -ForegroundColor DarkGray
+                Write-ExtraModNotes $m
+            }
+        }
+        Write-Host ''
+        Write-Host ' [A] 添加 mod（粘贴路径 / B 浏览文件夹）'
+        Write-Host ' [E] 启用/停用   [P] 低/高优先级   [M] 随机化合并开关'
+        Write-Host ' [U] 上移   [D] 下移   [R] 删除'
+        Write-Host ' [Q] 返回主菜单'
+        Write-Host ''
+        $sel = Read-Host '请选择'
+        if ($null -eq $sel) { return }   # 输入流结束（非交互调用）时直接返回主菜单
+        $cmd = $sel.Trim().ToLower()
+        switch ($cmd) {
+            'a' { [void](Add-ExtraModInteractive); Pause-Any }
+            'e' { $n = Read-ExtraModIndex $mods; if ($n -gt 0) { [void](Update-ExtraMods 'toggle' $n) }; Pause-Any }
+            'p' { $n = Read-ExtraModIndex $mods; if ($n -gt 0) { [void](Update-ExtraMods 'priority' $n) }; Pause-Any }
+            'm' { $n = Read-ExtraModIndex $mods; if ($n -gt 0) { [void](Update-ExtraMods 'merge' $n) }; Pause-Any }
+            'u' { $n = Read-ExtraModIndex $mods; if ($n -gt 0) { [void](Update-ExtraMods 'up' $n) }; Pause-Any }
+            'd' { $n = Read-ExtraModIndex $mods; if ($n -gt 0) { [void](Update-ExtraMods 'down' $n) }; Pause-Any }
+            'r' { $n = Read-ExtraModIndex $mods; if ($n -gt 0) { [void](Update-ExtraMods 'remove' $n) }; Pause-Any }
+            'q' { return }
+            default { }
+        }
+    }
+}
+
 # ---------------------------------------------------------------- 包列表
 function Get-Packs {
     if (-not (Test-Path -LiteralPath $PacksRoot)) { return @() }
@@ -389,7 +731,7 @@ function Show-IniDry([string]$ModLines, [string]$DllLines) {
     Write-Host ''
     Write-Host '路径检查：'
     foreach ($line in ($ModLines -split "`r?`n")) {
-        if ($line -match '^\s*(RNG_Lands_Base|RNG_Lands_Randomizer)\s*=\s*(.+)$') {
+        if ($line -match '^\s*(RNG_Lands_Base|RNG_Lands_Randomizer|Extra_[A-Za-z]+_\d+)\s*=\s*(.+)$') {
             $k = $Matches[1]; $v = $Matches[2].Trim()
             $exists = Test-Path -LiteralPath $v
             Write-Host ('  ' + $k + ' -> ' + $v + '  (存在=' + $exists + ')')
@@ -501,7 +843,10 @@ function Invoke-Rand {
             if ($ans -notmatch '^[yY]') { return }
         }
     }
-    $modLines = 'RNG_Lands_Base=' + $base + "`r`n" + 'RNG_Lands_Randomizer=' + $RandomDir
+    $lowLines = @(Get-ExtraModLines 'low')
+    $highLines = @(Get-ExtraModLines 'high')
+    $core = @(('RNG_Lands_Base=' + $base), ('RNG_Lands_Randomizer=' + $RandomDir))
+    $modLines = (@($lowLines) + $core + @($highLines)) -join "`r`n"
     $dllLines = 'randomizer_crashfix=..\randomizer\dll\RandomizerCrashFix.dll|early'
     if ($DryRun) { Show-IniDry $modLines $dllLines; return }
     Write-IniFile $modLines $dllLines
@@ -522,7 +867,9 @@ function Invoke-Vanilla([switch]$ChooseFirst) {
     Write-Head '启动 · 无敌人随机（直接玩默认包，不经过随机器）'
     Write-Host ('  默认包 : ' + ($rel -replace '\\', ' / '))
     Write-Host ('  目录   : ' + $full)
-    $modLines = 'RNG_Lands_Base=' + $full
+    $lowLines = @(Get-ExtraModLines 'low')
+    $highLines = @(Get-ExtraModLines 'high')
+    $modLines = (@($lowLines) + @('RNG_Lands_Base=' + $full) + @($highLines)) -join "`r`n"
     $dllLines = '; 无敌人随机模式：不需要额外 DLL'
     if ($DryRun) { Show-IniDry $modLines $dllLines; return }
     Write-IniFile $modLines $dllLines
@@ -536,19 +883,53 @@ function Invoke-Randomizer {
     if (-not $rel) { Write-Err '没有可用的包'; return }
     $full = Join-Path $PacksRoot $rel
     if (-not (Test-Path -LiteralPath $RandomExe)) { Write-Err ('找不到随机器：' + $RandomExe); return }
-    try { Set-Clipboard -Value $full | Out-Null } catch { }
-    Write-Head '打开随机器（先选好要合并的包）'
-    Write-Host ('  默认包路径（已复制到剪贴板）：')
-    Write-Host ('  ' + $full) -ForegroundColor Green
-    Write-Host ''
-    Write-Host '  在随机器窗口里按下面做：' -ForegroundColor Yellow
-    Write-Host '    1) 选好游戏 exe'
-    Write-Host '    2) 点「Merge other mod」→ 选上面这个目录（或直接在路径框里 Ctrl+V）'
-    Write-Host '    3) 勾选敌人随机（Enemy Randomizer 页）等选项'
-    Write-Host '    4) 点随机化；完成后关掉随机器，回本菜单按 [2] 启动'
+    $mergeMods = @((Get-ExtraMods) | Where-Object { $_.enabled -and $_.merge })
+    $tomlPath = $null
+    if ($mergeMods.Count -gt 0) {
+        if (-not $DryRun) {
+            [System.IO.File]::WriteAllText($MergeToml, (New-MergeToml $full), (New-Object System.Text.UTF8Encoding($false)))
+            $tomlPath = $MergeToml
+        }
+    }
+    $clip = $full
+    if ($tomlPath) { $clip = $tomlPath }
+    try { Set-Clipboard -Value $clip | Out-Null } catch { }
+    Write-Head '打开随机器（先选好要合并的包 / mod）'
+    if ($mergeMods.Count -gt 0) {
+        Write-Host '  合并清单（已复制到剪贴板）：' -ForegroundColor Green
+        Write-Host ('  ' + $MergeToml)
+        Write-Host ('  包含：RNG Lands 基础包 + ' + $mergeMods.Count + ' 个附加 mod（高优先级排前面）')
+        foreach ($m in $mergeMods) { Write-Host ('    - ' + $m.name + '  (' + $m.priority + ')') -ForegroundColor DarkGray }
+        Write-Host ''
+        Write-Host '  在随机器窗口里按下面做：' -ForegroundColor Yellow
+        Write-Host '    1) 选好游戏 exe'
+        Write-Host '    2) 点「Merge other mod」→ 选上面这个 .toml 文件（或路径框 Ctrl+V）'
+        Write-Host '       （随机器会合并清单里列出的所有目录；冲突文件按清单顺序取第一个）'
+        Write-Host '    3) 勾选敌人随机（Enemy Randomizer 页）等选项'
+        Write-Host '    4) 点随机化；完成后关掉随机器，回本菜单按 [2] 启动'
+    } else {
+        Write-Host '  默认包路径（已复制到剪贴板）：' -ForegroundColor Green
+        Write-Host ('  ' + $full)
+        Write-Host ''
+        Write-Host '  在随机器窗口里按下面做：' -ForegroundColor Yellow
+        Write-Host '    1) 选好游戏 exe'
+        Write-Host '    2) 点「Merge other mod」→ 选上面这个目录（或直接在路径框里 Ctrl+V）'
+        Write-Host '    3) 勾选敌人随机（Enemy Randomizer 页）等选项'
+        Write-Host '    4) 点随机化；完成后关掉随机器，回本菜单按 [2] 启动'
+        Write-Host ''
+        Write-Host '  想再合并别的 mod：主菜单 [7] 添加并打开「随机化合并」开关，再回 [4]。'
+    }
     Write-Host ''
     Write-Host '  想换别的包：回主菜单按 [1]，再按 [4]。'
-    if ($DryRun) { Write-Warn '[-DryRun] 不启动随机器。'; return }
+    if ($DryRun) {
+        if ($mergeMods.Count -gt 0) {
+            Write-Host ''
+            Write-Host '  —— merge_mods.toml 预览 ——' -ForegroundColor Cyan
+            Write-Host (New-MergeToml $full)
+        }
+        Write-Warn '[-DryRun] 不启动随机器。'
+        return
+    }
     Start-Process -FilePath $RandomExe -WorkingDirectory $RandomDir
     try { Start-Process -FilePath 'explorer.exe' -ArgumentList ('"' + $full + '"') } catch { }
 }
@@ -563,6 +944,18 @@ function Show-Status {
     if ($gameRoot) { Write-Host ('  游戏路径   : ' + $gameRoot) }
     else { Write-Host '  游戏路径   : （未设置 / 有多个候选，按 [6] 选择）' -ForegroundColor Yellow }
     if ($rel) { Write-Host ('  默认包     : ' + ($rel -replace '\\', ' / ')) } else { Write-Host '  默认包     : （未设置）' }
+    $enabledExtras = @(@(Get-ExtraMods) | Where-Object { $_.enabled })
+    if ($enabledExtras.Count -eq 0) {
+        Write-Host '  其他 mod   : （未添加；主菜单 [7] 可叠加别的 mod）'
+    } else {
+        $lowCount = @($enabledExtras | Where-Object { $_.priority -ne 'high' }).Count
+        $highCount = $enabledExtras.Count - $lowCount
+        $mergeCount = @($enabledExtras | Where-Object { $_.merge }).Count
+        $extraText = '  其他 mod   : ' + $enabledExtras.Count + ' 个启用（低 ' + $lowCount + ' / 高 ' + $highCount
+        if ($mergeCount -gt 0) { $extraText += '；随机化合并 ' + $mergeCount + ' 个' }
+        $extraText += '）'
+        Write-Host $extraText
+    }
     if ($latest) {
         if ($latest.HasEnemy) { $tag = '有敌人随机' } else { $tag = '未勾选敌人随机' }
         Write-Host ('  随机器输出 : ' + $latest.Time.ToString('yyyy-MM-dd HH:mm:ss') + '（' + $tag + '）')
@@ -596,10 +989,12 @@ function Show-Menu {
         Write-Host ' [4] 打开随机器（把默认包路径复制到剪贴板）'
         Write-Host ' [5] 先换默认包，再启动无随机版'
         Write-Host ' [6] 设置游戏路径（自动检测 / 浏览选择，会记住）'
+        Write-Host ' [7] 其他 mod（叠加别的 mod；含 regulation 的可随机化时合并）'
         Write-Host ' [0] 退出'
         Write-Host ' 直接回车 = [3] 启动无敌人随机（默认包）'
         Write-Host '=============================================================='
         $choice = Read-Host '请选择'
+        if ($null -eq $choice) { return }   # 输入流结束（管道/非交互）时退出
         switch ($choice) {
             ''    { Invoke-Vanilla; Pause-Any }
             '1'   { [void](Select-Pack (Get-Packs)); Pause-Any }
@@ -608,6 +1003,7 @@ function Show-Menu {
             '4'   { Invoke-Randomizer; Pause-Any }
             '5'   { if (Select-Pack (Get-Packs)) { Invoke-Vanilla }; Pause-Any }
             '6'   { [void](Set-GameRootInteractive); Pause-Any }
+            '7'   { Show-ExtraModsMenu }
             '0'   { return }
             default { }
         }
@@ -626,6 +1022,12 @@ function Show-Help {
     Write-Host '  ... -Action rand -DryRun'
     Write-Host '  ... -Action vanilla -NoLaunch      （只写配置不启动）'
     Write-Host '  ... -Action setgame -GamePath "D:\ELDEN RING\Game"   （设置/修改游戏路径）'
+    Write-Host '  ... -Action extlist                          （查看其他 mod 列表）'
+    Write-Host '  ... -Action extadd -ModPath "D:\SomeMod"     （添加其他 mod）'
+    Write-Host '  ... -Action exttoggle -Index 1               （启用/停用）'
+    Write-Host '  ... -Action extpriority -Index 1             （切换低/高优先级）'
+    Write-Host '  ... -Action extmerge -Index 1                （随机化合并开关）'
+    Write-Host '  ... -Action extremove -Index 1               （删除）'
 }
 
 # ---------------------------------------------------------------- 入口
@@ -648,6 +1050,30 @@ try {
                 [void](Select-Pack $packs)
             }
         }
+        'extlist'    {
+            Write-Head '其他 mod（附加加载）'
+            $mods = @(Get-ExtraMods)
+            if ($mods.Count -eq 0) { Write-Host '  （还没有添加任何 mod）' }
+            $i = 0
+            foreach ($m in $mods) {
+                $i++
+                $state = $(if ($m.enabled) { '启用' } else { '停用' })
+                $prio = $(if ($m.priority -eq 'high') { '高' } else { '低' })
+                $mergeTag = ''
+                if ($m.merge) { $mergeTag = ' [随机化合并]' }
+                Write-Host ('  ' + $i + '. [' + $state + '] 优先级:' + $prio + $mergeTag + '  ' + $m.name)
+                Write-Host ('     ' + $m.path)
+                Write-ExtraModNotes $m
+            }
+        }
+        'extadd'     {
+            if (-not $ModPath) { Write-Err '需要 -ModPath "<mod 目录>"'; exit 1 }
+            if (-not (Add-ExtraMod $ModPath)) { exit 1 }
+        }
+        'extremove'   { if (-not (Update-ExtraMods 'remove' $Index)) { exit 1 } }
+        'exttoggle'   { if (-not (Update-ExtraMods 'toggle' $Index)) { exit 1 } }
+        'extpriority' { if (-not (Update-ExtraMods 'priority' $Index)) { exit 1 } }
+        'extmerge'    { if (-not (Update-ExtraMods 'merge' $Index)) { exit 1 } }
         'setgame'    {
             if ($GamePath) {
                 $root = Test-NormalizeGameRoot $GamePath

@@ -8,7 +8,7 @@
   （Ruby / Apache / Pack 10 的 14 个配置；每个都有 `recommended increased difficulty` 与 `vanilla difficulty`）
 - `randomizer\` —— EldenRingRandomizer v0.12.2 工作目录，**随机化输出也写在这里**
 - `yafsml\` —— YAFSML 注入式加载器（不改游戏目录一个文件）
-- `_launcher\` —— 启动器逻辑、配置模板、默认包记录
+- `_launcher\` —— 启动器逻辑、配置模板、默认包记录（`extra_mods.json` / `merge_mods.toml` 会自动生成）
 
 ## 怎么启动
 
@@ -22,6 +22,7 @@
 | `[4]` | 打开随机器，并把默认包路径**复制到剪贴板** |
 | `[5]` | 先换包，再启动无随机版 |
 | `[6]` | **设置游戏路径**（自动检测 / 浏览选择，会记住） |
+| `[7]` | **其他 mod**：叠加别的 mod（低 / 高优先级；可勾选随机化时合并） |
 | `回车` | 直接启动无随机版（默认包） |
 
 旧的 `启动_RNG_Lands_随机_YAFSML.bat` 保留为「直接启动有敌人随机版」快捷方式。
@@ -55,6 +56,27 @@
      `Checking other mod directory` 路径作为叠加包 —— 所以**你上次合并的是哪个包，它就叠哪个包**，不会叠错。
    - 如果最新日志里没有 `enemy` 选项，会提示这版不是“有敌人随机”。
 
+## 叠加其他 mod（可选，菜单 `[7]`）
+
+想再叠别的 mod（贴图、武器、骨灰、UI 等）时用它：
+
+1. 主菜单按 `[7]`；
+2. 按 `[A]` 添加：粘贴 mod 目录路径（或按 `B` 浏览）。可以选 mod 文件夹本身、它的上一层、
+   或带 `mod` 子目录的包装目录 —— 启动器会自动找到里面真正的 mod 根，并给个名字；
+3. `[P]` 选优先级：
+   - **低**（默认给带 `regulation.bin` 的 mod）：被 RNG Lands 包同名文件覆盖 —— 适合贴图/UI；
+   - **高**（默认给不带 `regulation.bin` 的 mod）：覆盖 RNG Lands 包 —— 适合要抢占的小改动；
+4. `[M]` 勾选「随机化时合并」（想和敌人随机一起用时打开），`[E]` 启用/停用，`[U]/[D]` 调先后，`[R]` 删除；
+5. 返回主菜单，按 `[3]`（无随机）或先 `[4]`（有随机）即可。
+
+**有随机时怎么合并**：菜单 `[7]` 里给 mod 打开 `[M]` 后，按 `[4]` 打开随机器 —— 启动器会生成
+`_launcher\merge_mods.toml`，路径已复制到剪贴板；在随机器里 **Merge other mod → 选这个 .toml**，
+再勾敌人随机、点随机化。合并顺序（冲突文件取先声明的）：高优先级 mod → RNG Lands 包 → 低优先级 mod。
+
+> 含 `regulation.bin` 的 mod 和 RNG Lands 的 `regulation.bin` 天然冲突（低优先级会被覆盖、高优先级会盖掉
+> RNG Lands 的改动，菜单里会提示）；随机器也只能合并文件级可合并的 mod，部分 mod 合并后可能无效，
+> 以随机化日志和游戏内实际效果为准。
+
 ## 换包以后
 
 - 只是换「无随机版」玩：`[1]` 选新包 → `[3]`。
@@ -84,6 +106,8 @@
 
 - 配置模板：`_launcher\YAFSML.ini.tpl`（`@MOD_LINES@` / `@DLL_LINES@` 由启动器填充）。
 - 默认包记录：`_launcher\default_pack.txt`（一行相对路径）。
+- 其他 mod 列表：`_launcher\extra_mods.json`（菜单 `[7]` 自动维护，JSON）；
+  随机化合并清单：`_launcher\merge_mods.toml`（按 `[4]` 时自动生成，Mod Engine 格式）。
 - 游戏路径记录：`_launcher\game_path.txt`（一行绝对路径；删掉就会重新自动检测）。
 - 命令行调试：
   ```
@@ -92,4 +116,10 @@
   powershell ... -Action rand -DryRun
   powershell ... -Action vanilla -NoLaunch    # 只写配置不启动
   powershell ... -Action setgame -GamePath "D:\ELDEN RING\Game"   # 设置游戏路径
+  powershell ... -Action extlist                  # 查看已添加的其他 mod
+  powershell ... -Action extadd -ModPath "D:\mods\SomeMod"   # 添加其他 mod
+  powershell ... -Action exttoggle -Index 1       # 启用/停用第 1 个
+  powershell ... -Action extpriority -Index 1     # 切换低/高优先级
+  powershell ... -Action extmerge -Index 1        # 切换随机化时合并
+  powershell ... -Action extremove -Index 1       # 删除第 1 个
   ```
