@@ -8,6 +8,8 @@ YAFSML 注入式加载器统一起启动的小工具：
 - 默认包会记住，双击 → 回车即可玩；
 - **可以叠加其他 mod**：菜单 `[7]` 添加任意 mod 目录（低 / 高优先级），勾选「随机化合并」后
   `[4]` 打开的随机器会生成一份合并清单（Mod Engine toml），把附加 mod 和 RNG Lands 包一起合并；
+- **内置 Seamless Co-op 无缝联机开关**：菜单 `[8]` 开 / 关（v2.0.1，文件放 `_mods\SeamlessCoop\`，
+  开时由 YAFSML 加载 `ersc.dll`，联机存档 `ER0000.cnv.co2` 与单机隔离；本仓库不附带二进制）；
 - **游戏路径不用手填**：首次自动检测（Steam 库 / 整合包附近 / 常见目录），
   找不到或想换时用菜单 `[6]` 选择，结果保存在 `_launcher\game_path.txt`；
 - YAFSML 是运行时注入，**游戏目录一个文件都不会改**；
@@ -28,6 +30,7 @@ YAFSML 注入式加载器统一起启动的小工具：
 | [RNG Lands 简体中文补丁](https://github.com/netori/RNG-Lands-CN) | 放进各包目录的 `msg/zhocn/`（本启动器直接兼容） |
 | EldenRingRandomizer v0.12.2 | 放在 `randomizer\`，随机化输出也写在这里 |
 | YAFSML v0.10.4+ | 放在 `yafsml\`（`YAFSML.exe` / `YAFSML.dll` / `YAFSML.ini`） |
+| Seamless Co-op v2.0.1（可选） | Nexus mod 510：解压到 `_mods\SeamlessCoop\`；本仓库不附带二进制，用菜单 `[8]` 开关 |
 
 目录结构见 [`示例_目录结构.txt`](示例_目录结构.txt)。
 
@@ -43,6 +46,7 @@ YAFSML 注入式加载器统一起启动的小工具：
  [5] 先换默认包，再启动无随机版
  [6] 设置游戏路径（自动检测 / 浏览选择，会记住）
  [7] 其他 mod（叠加别的 mod；含 regulation 的可随机化时合并）
+ [8] Seamless Co-op 无缝联机 mod：开 / 关（固定集成）
  [0] 退出；直接回车 = [3]
 ```
 
@@ -96,6 +100,27 @@ YAFSML 注入式加载器统一起启动的小工具：
   以随机化日志与游戏内实际效果为准；
 - 想要「有敌人随机 + 其他 mod」，先确认随机器那次随机化是**用带 merge 清单的方式**做的，再按 `[2]` 启动。
 
+### Seamless Co-op 无缝联机（菜单 `[8]`）
+
+启动器把 Seamless Co-op v2.0.1 作为**固定集成的可选 mod**：默认关闭，菜单 `[8]` 开 / 关，
+只有开着的时候才把 `ersc.dll` 写进 YAFSML 的 `[dll]`。
+
+一次性安装：
+
+1. 下载 Seamless Co-op v2.0.1（Nexus mod 510）；
+2. 把压缩包里 `SeamlessCoop\` 文件夹**里面的内容**解压到 `_mods\SeamlessCoop\`
+   （形成 `_mods\SeamlessCoop\ersc.dll`、`ersc_settings.ini`、`locale\`、`crashpad\`）；
+3. 主菜单 `[8]` → `[1]` 开启。启动游戏时日志应出现
+   `[extdll] loaded external DLL seamlesscoop`。
+
+注意：
+
+- **存档**：开启后联机存档是 `ER0000.cnv.co2`（与单机 `ER0000.cnv` 分开）；
+- **密码**：改 `_mods\SeamlessCoop\ersc_settings.ini` 里的 `cooppassword`，队友填同一个；
+- **版本**：联机双方的游戏版本、Seamless 版本必须一致；
+- 与随机化 / 其他 mod 叠加属于附加组合，稳定性不保证：联机异常时先 `[8]` 关掉它，单机复现问题；
+- 换 Seamless 版本：直接替换 `_mods\SeamlessCoop\` 里的文件，开关状态不用动。
+
 ## 实现要点
 
 - `_launcher\rng_lands_launcher.ps1`：菜单、包扫描、默认包记录、读随机器日志、生成 ini、启动。
@@ -107,6 +132,8 @@ YAFSML 注入式加载器统一起启动的小工具：
   低优先级在基础包**之前**、高优先级在最后；随机化合并清单 `_launcher\merge_mods.toml`
   是高优先级 mod → `RNG_Lands_Base` → 低优先级 mod（first-wins）。
 - 有随机模式会给 `RandomizerCrashFix.dll` 配 `|early`（基础+DLC 敌人一起随机时防崩溃）。
+- Seamless Co-op（菜单 `[8]`）开启时往 `[dll]` 追加 `seamlesscoop=<绝对路径>\ersc.dll`（不写加载条件），
+  状态记在 `_launcher\seamless_enabled.txt`；关闭时这一行完全不出现。
 - 独立存档/不写 regulation 标记：`replace_save_filename=.cnv` + `prevent_regulation_save_write=1`。
 
 ## 排障
@@ -117,10 +144,13 @@ YAFSML 注入式加载器统一起启动的小工具：
 - 敌人刷出时崩溃：把 `_launcher\YAFSML.ini.tpl` 里 `randomizer_crashfix=...|early` 改成不带 `|early`。
 - 附加 mod 没生效：看 `yafsml\log\YAFSML.log` 里有没有 `Extra_low_*` / `Extra_high_*` 的 `[mod] added mod` 行；
   再确认优先级：低优先级会被 RNG Lands 包同名文件覆盖。
+- Seamless 联机没反应 / 没加载：看 `yafsml\log\YAFSML.log` 里有没有 `[extdll] loaded external DLL seamlesscoop`；
+  没有就检查 `_mods\SeamlessCoop\ersc.dll` 是否存在、菜单 `[8]` 是否开启；还是不行先 `[8]` 关掉确认单机正常。
 - 更多见 [`启动说明_RNG_Lands_整合版.md`](启动说明_RNG_Lands_整合版.md)。
 
 ## 授权 / 声明
 
 - 脚本以 **MIT** 发布（见 [LICENSE](LICENSE)）。
-- 本仓库不含任何游戏、mod、补丁文件；RNG Lands © 其作者，Elden Ring © FromSoftware / Bandai Namco。
+- 本仓库不含任何游戏、mod、补丁文件（Seamless Co-op 也一样：只做开关，二进制请自行从其发布页下载）；
+  RNG Lands © 其作者，Seamless Co-op © LukeYui，Elden Ring © FromSoftware / Bandai Namco。
 - 与 FromSoftware、Bandai Namco、RNG Lands 作者、YAFSML / Randomizer 作者均无隶属关系。

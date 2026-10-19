@@ -9,7 +9,8 @@ RNG Lands 整合启动器 —— 需要的目录结构
 │  ├─ YAFSML.ini.tpl
 │  ├─ default_pack.txt             ← 默认包记录（菜单 [1] 会改它）
 │  ├─ extra_mods.json              ← 其他 mod 列表（菜单 [7] 自动生成）
-│  └─ merge_mods.toml              ← 随机化合并清单（按 [4] 时自动生成）
+│  ├─ merge_mods.toml              ← 随机化合并清单（按 [4] 时自动生成）
+│  └─ seamless_enabled.txt         ← Seamless Co-op 开关（菜单 [8] 自动生成）
 ├─ RNG Lands\                       ← 自己准备：打过汉化补丁的 RNG Lands 包
 │  ├─ Ruby\
 │  │  ├─ recommended increased difficulty\   ← 含 regulation.bin / event / msg / script
@@ -18,6 +19,11 @@ RNG Lands 整合启动器 —— 需要的目录结构
 │  └─ Pack 10\<配置名>\
 │     ├─ recommended increased difficulty\
 │     └─ vanilla difficulty\
+├─ _mods\SeamlessCoop\              ← 自己准备：Seamless Co-op v2.0.1（菜单 [8] 开关）
+│  ├─ ersc.dll
+│  ├─ ersc_settings.ini
+│  ├─ locale\
+│  └─ crashpad\
 ├─ randomizer\                      ← EldenRingRandomizer v0.12.2（工作目录 = 输出目录）
 │  ├─ EldenRingRandomizer.exe
 │  ├─ dll\RandomizerCrashFix.dll
@@ -30,5 +36,7 @@ RNG Lands 整合启动器 —— 需要的目录结构
 - 启动器每次启动前会生成 yafsml\YAFSML.ini（[mod] 段按你的选择填），不要手改生成的 ini；
   要改通用设置请改 _launcher\YAFSML.ini.tpl。
 - randomizer\ 里必须是「已经随机化过一次」的目录（没有 spoiler_logs 时菜单会提示先去随机化）。
+- Seamless Co-op 是可选固定集成：把其 SeamlessCoop 文件夹里的内容解压到 _mods\SeamlessCoop\，
+  然后菜单 [8] 开关；不开时完全不加载，联机存档 ER0000.cnv.co2 与单机分开。
 - 其他 mod 可以放在任意位置，用菜单 [7] 添加即可（不会被移动/复制进本目录）；
   要在随机化时一起合并的 mod，记得在菜单里给它打开「随机化时合并」（[M]）。

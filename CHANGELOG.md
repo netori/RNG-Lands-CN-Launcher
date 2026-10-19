@@ -1,5 +1,17 @@
 # Changelog / 更新日志
 
+## [1.3.0] - 2026-10-19
+
+- **固定集成 Seamless Co-op v2.0.1（无缝联机）**：菜单 `[8]` 开 / 关，默认关闭。
+  - 文件固定放 `_mods\SeamlessCoop\`（`ersc.dll` + `ersc_settings.ini` + `locale\` + `crashpad\`），
+    YAFSML 用绝对路径加载；关闭时 `[dll]` 里完全不出现。
+  - 开启后联机存档为 `ER0000.cnv.co2`（与单机 `ER0000.cnv` 分开），启动时会打印当前联机状态与存档路径。
+  - 菜单 `[8]` 显示版本 / DLL 是否存在 / 配置路径，并提供 `[1]` 开 `[2]` 关；
+    `-Action seamlesson / seamlessoff / seamless` 可在命令行开关。
+  - 状态记在 `_launcher\seamless_enabled.txt`（`1` 开 / `0` 关）；只影响加载，不复制/改动游戏目录。
+  - 本仓库不附带 Seamless Co-op 二进制，安装方式见 README / 启动说明。
+- 路径检查（`-DryRun`）现在也检查 `[dll]` 里 DLL 是否存在（去掉 `|early` 等条件后再解析相对路径）。
+
 ## [1.2.0] - 2026-10-19
 
 - **新增「其他 mod」功能**：菜单 `[7]` 可以叠加任意 mod 目录（自动识别 mod 根，支持

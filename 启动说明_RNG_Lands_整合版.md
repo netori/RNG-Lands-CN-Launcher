@@ -9,6 +9,7 @@
 - `randomizer\` —— EldenRingRandomizer v0.12.2 工作目录，**随机化输出也写在这里**
 - `yafsml\` —— YAFSML 注入式加载器（不改游戏目录一个文件）
 - `_launcher\` —— 启动器逻辑、配置模板、默认包记录（`extra_mods.json` / `merge_mods.toml` 会自动生成）
+- `_mods\SeamlessCoop\` —— Seamless Co-op（可选，固定集成；菜单 `[8]` 开关，需自己解压一次）
 
 ## 怎么启动
 
@@ -23,6 +24,7 @@
 | `[5]` | 先换包，再启动无随机版 |
 | `[6]` | **设置游戏路径**（自动检测 / 浏览选择，会记住） |
 | `[7]` | **其他 mod**：叠加别的 mod（低 / 高优先级；可勾选随机化时合并） |
+| `[8]` | **Seamless Co-op**：无缝联机开关（固定集成，文件在 `_mods\SeamlessCoop\`） |
 | `回车` | 直接启动无随机版（默认包） |
 
 旧的 `启动_RNG_Lands_随机_YAFSML.bat` 保留为「直接启动有敌人随机版」快捷方式。
@@ -77,6 +79,24 @@
 > RNG Lands 的改动，菜单里会提示）；随机器也只能合并文件级可合并的 mod，部分 mod 合并后可能无效，
 > 以随机化日志和游戏内实际效果为准。
 
+## Seamless Co-op 无缝联机（可选，菜单 `[8]`）
+
+Seamless Co-op 是「固定集成」的：文件固定放 `_mods\SeamlessCoop\`，默认关闭，菜单 `[8]` 开 / 关。
+
+一次性安装：
+
+1. Nexus mod 510 下载 Seamless Co-op v2.0.1；
+2. 解压压缩包里 `SeamlessCoop\` 文件夹**里面的内容**到 `_mods\SeamlessCoop\`
+   （形成 `_mods\SeamlessCoop\ersc.dll`、`ersc_settings.ini`、`locale\`、`crashpad\`）；
+3. 主菜单 `[8]` → `[1]` 开启（之后每次启动都会加载；关掉就完全不加载）。
+
+注意：
+
+- 联机存档 `ER0000.cnv.co2`，与单机 `ER0000.cnv` 分开；
+- 改 `_mods\SeamlessCoop\ersc_settings.ini` 里的 `cooppassword`（队友要一样）；
+- 双方游戏版本 + Seamless 版本必须一致；
+- 和随机 / 其他 mod 一起用属于附加组合，出问题先 `[8]` 关掉再单机排查。
+
 ## 换包以后
 
 - 只是换「无随机版」玩：`[1]` 选新包 → `[3]`。
@@ -85,6 +105,7 @@
 ## 存档
 
 - 独立存档：`%APPDATA%\EldenRing\<SteamID>\ER0000.cnv`
+- 开了 Seamless Co-op（菜单 `[8]`）时联机存档是 `ER0000.cnv.co2`（同目录，和单机分开）
 - 原版存档：同目录 `ER0000.sl2` —— 两边隔离，互不覆盖
 - 机制：`replace_save_filename=.cnv` + `prevent_regulation_save_write=1`
 
@@ -95,6 +116,7 @@
   ```
   INFO: [mod] added mod RNG_Lands_Base from `...\RNG Lands\Ruby\recommended increased difficulty`
   INFO: [extdll] loaded external DLL randomizer_crashfix from `..\randomizer\dll\RandomizerCrashFix.dll`
+  INFO: [extdll] loaded external DLL seamlesscoop from `...\_mods\SeamlessCoop\ersc.dll`   （[8] 开启时才有）
   ```
   并把 `request=regulation:` 指到随机化输出的 `regulation.bin`。
 - 进游戏没变化：确认日志里 `[mod] added mod` 是哪个路径；无随机版应只有 `RNG_Lands_Base` 一行。
@@ -109,6 +131,8 @@
 - 其他 mod 列表：`_launcher\extra_mods.json`（菜单 `[7]` 自动维护，JSON）；
   随机化合并清单：`_launcher\merge_mods.toml`（按 `[4]` 时自动生成，Mod Engine 格式）。
 - 游戏路径记录：`_launcher\game_path.txt`（一行绝对路径；删掉就会重新自动检测）。
+- Seamless 开关：`_launcher\seamless_enabled.txt`（`1` 开 / `0` 关；删掉 = 关闭）；
+  Seamless 本体：`_mods\SeamlessCoop\`（`ersc.dll` + `ersc_settings.ini` + `locale\` + `crashpad\`）。
 - 命令行调试：
   ```
   powershell -NoProfile -ExecutionPolicy Bypass -File _launcher\rng_lands_launcher.ps1 -Action list
@@ -122,4 +146,7 @@
   powershell ... -Action extpriority -Index 1     # 切换低/高优先级
   powershell ... -Action extmerge -Index 1        # 切换随机化时合并
   powershell ... -Action extremove -Index 1       # 删除第 1 个
+  powershell ... -Action seamlesson               # 开启 Seamless Co-op
+  powershell ... -Action seamlessoff              # 关闭 Seamless Co-op
+  powershell ... -Action seamless                 # 切换开/关并显示状态
   ```

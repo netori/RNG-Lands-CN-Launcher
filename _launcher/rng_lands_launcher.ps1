@@ -9,6 +9,7 @@
 #   [3] 启动 无敌人随机（默认包直接玩）   [4] 打开随机器（包路径复制到剪贴板）
 #   [6] 设置游戏路径（自动检测 / 浏览选择；记住到 _launcher\game_path.txt）
 #   [7] 其他 mod（附加加载：可叠别的 mod；含 regulation 的可在随机化时合并）
+#   [8] Seamless Co-op 无缝联机 mod：开 / 关（固定集成，文件在 _mods\SeamlessCoop）
 #
 # 游戏路径不写死：优先读 _launcher\game_path.txt，其次自动检测
 #（Steam 库 / 整合包附近 / 常见目录），仍找不到就弹选择框。
@@ -16,7 +17,8 @@
 [CmdletBinding()]
 param(
     [ValidateSet('menu', 'list', 'select', 'rand', 'vanilla', 'randomizer', 'help', 'setgame',
-             'extlist', 'extadd', 'extremove', 'exttoggle', 'extpriority', 'extmerge')]
+             'extlist', 'extadd', 'extremove', 'exttoggle', 'extpriority', 'extmerge',
+             'seamless', 'seamlesson', 'seamlessoff')]
     [string]$Action = 'menu',
     [int]$Index = 0,
     [string]$Pack = '',
@@ -46,6 +48,10 @@ $RandomLog   = Join-Path $YafDir 'log\YAFSML.log'
 $GamePathFile = Join-Path $LauncherDir 'game_path.txt'
 $ExtraModsFile = Join-Path $LauncherDir 'extra_mods.json'
 $MergeToml     = Join-Path $LauncherDir 'merge_mods.toml'
+$SeamlessDir   = Join-Path $Paly '_mods\SeamlessCoop'
+$SeamlessDll   = Join-Path $SeamlessDir 'ersc.dll'
+$SeamlessIni   = Join-Path $SeamlessDir 'ersc_settings.ini'
+$SeamlessState = Join-Path $LauncherDir 'seamless_enabled.txt'
 $script:CacheGameRoot = $null
 
 # ---------------------------------------------------------------- 输出小工具
@@ -620,6 +626,82 @@ function Show-ExtraModsMenu {
     }
 }
 
+# ---------------------------------------------------------------- Seamless Co-op（固定集成）
+# 说明：Seamless Co-op 靠一个外部 DLL（ersc.dll）+ 同目录的 ersc_settings.ini / locale / crashpad 工作。
+#       文件固定放在 paly\_mods\SeamlessCoop，用绝对路径加载；开关只决定 [dll] 里有没有这一行。
+#       先例：旧 YAFSML 配置里 seamlesscoop=../SeamlessCoop/ersc.dll（不写加载条件）可正常联机。
+function Get-SeamlessEnabled {
+    if (-not (Test-Path -LiteralPath $SeamlessState)) { return $false }
+    $v = Get-Content -LiteralPath $SeamlessState -TotalCount 1 -Encoding UTF8 -ErrorAction SilentlyContinue
+    if ($null -eq $v) { return $false }
+    return ($v.Trim() -eq '1')
+}
+function Set-SeamlessEnabled([bool]$Enabled) {
+    $v = '0'
+    if ($Enabled) { $v = '1' }
+    [System.IO.File]::WriteAllText($SeamlessState, $v + "`r`n", (New-Object System.Text.UTF8Encoding($false)))
+}
+function Get-SeamlessVersion {
+    $vf = Join-Path $SeamlessDir 'VERSION.txt'
+    if (Test-Path -LiteralPath $vf) {
+        $v = Get-Content -LiteralPath $vf -TotalCount 1 -Encoding UTF8 -ErrorAction SilentlyContinue
+        if ($v) { return $v.Trim() }
+    }
+    return '（未知版本）'
+}
+function Get-SeamlessDllLine {
+    if (-not (Get-SeamlessEnabled)) { return '' }
+    if (-not (Test-Path -LiteralPath $SeamlessDll)) {
+        Write-Warn ('Seamless Co-op 已开启，但找不到 DLL：' + $SeamlessDll)
+        return ''
+    }
+    return ('seamlesscoop=' + $SeamlessDll)
+}
+function Show-SeamlessMenu {
+    while ($true) {
+        $enabled = Get-SeamlessEnabled
+        $hasDll = Test-Path -LiteralPath $SeamlessDll
+        Clear-Host
+        Write-Host '==============================================================' -ForegroundColor Cyan
+        Write-Host '  Seamless Co-op（无缝联机）· 固定集成' -ForegroundColor Cyan
+        Write-Host '==============================================================' -ForegroundColor Cyan
+        $state = '关闭'
+        if ($enabled) { $state = '开启' }
+        Write-Host ('  当前状态 : ' + $state)
+        Write-Host ('  版本     : ' + (Get-SeamlessVersion))
+        Write-Host ('  DLL      : ' + $SeamlessDll + '  (存在=' + $hasDll + ')')
+        Write-Host ('  配置     : ' + $SeamlessIni + '  (存在=' + (Test-Path -LiteralPath $SeamlessIni) + ')')
+        Write-Host ''
+        Write-Host '  说明：' -ForegroundColor Yellow
+        Write-Host '   - 开启后启动游戏时由 YAFSML 加载 ersc.dll；关掉就完全不加载（游戏回到纯单机）。'
+        Write-Host '   - 联机存档独立：ER0000.cnv.co2（不覆盖单机存档 ER0000.cnv）。'
+        Write-Host '   - 联机要求：游戏版本一致 + Steam 在线 + 同一密码（ersc_settings.ini 里 cooppassword）；'
+        Write-Host '     队友也要装同版本 Seamless Co-op。'
+        Write-Host '   - 与随机 mod 叠加不保证稳定：联机异常时先关掉它，用单机模式复现问题。'
+        Write-Host ''
+        Write-Host '  [1] 开启    [2] 关闭    [Q] 返回' -ForegroundColor Yellow
+        $sel = Read-Host '请选择'
+        if ($null -eq $sel) { return }
+        $sel = $sel.Trim().ToLower()
+        if ($sel -eq '1') {
+            if (-not $hasDll) {
+                Write-Err ('找不到 DLL：' + $SeamlessDll + '（先把 Seamless Co-op 解压到 _mods\SeamlessCoop）')
+                Pause-Any
+            } else {
+                Set-SeamlessEnabled $true
+                Write-Ok '已开启 Seamless Co-op（下次启动游戏生效）'
+                Start-Sleep -Seconds 1
+            }
+        } elseif ($sel -eq '2') {
+            Set-SeamlessEnabled $false
+            Write-Ok '已关闭 Seamless Co-op'
+            Start-Sleep -Seconds 1
+        } elseif ($sel -eq 'q') {
+            return
+        }
+    }
+}
+
 # ---------------------------------------------------------------- 包列表
 function Get-Packs {
     if (-not (Test-Path -LiteralPath $PacksRoot)) { return @() }
@@ -737,6 +819,15 @@ function Show-IniDry([string]$ModLines, [string]$DllLines) {
             Write-Host ('  ' + $k + ' -> ' + $v + '  (存在=' + $exists + ')')
         }
     }
+    foreach ($line in ($DllLines -split "`r?`n")) {
+        if ($line -match '^\s*([A-Za-z0-9_]+)\s*=\s*(.+)$') {
+            $k = $Matches[1]; $v = $Matches[2].Trim()
+            $vPath = ($v -split '\|')[0].Trim()
+            if (-not [System.IO.Path]::IsPathRooted($vPath)) { $vPath = Join-Path $YafDir $vPath }
+            $exists = Test-Path -LiteralPath $vPath
+            Write-Host ('  dll.' + $k + ' -> ' + $v + '  (存在=' + $exists + ')')
+        }
+    }
 }
 
 # ---------------------------------------------------------------- 启动游戏
@@ -751,6 +842,7 @@ function Start-YafGame {
     $gameExe = Join-Path $erRoot 'Game\eldenring.exe'
     if (-not (Test-Path -LiteralPath $gameExe)) { Write-Err ('游戏路径无效（找不到 Game\eldenring.exe）：' + $erRoot); return $false }
     Write-Host ('  游戏：' + $gameExe)
+    if (Get-SeamlessEnabled) { Write-Host '  联机 mod：Seamless Co-op 已开启' }
     if ($NoLaunch) {
         Write-Warn '[-NoLaunch] 只写配置，不启动 YAFSML。'
         return $true
@@ -776,7 +868,11 @@ function Start-YafGame {
         Write-Warn ('60 秒内没看到 eldenring.exe，看日志：' + $RandomLog)
     }
     Write-Host ('  日志：' + $RandomLog)
-    Write-Host '  存档：%APPDATA%\EldenRing\<SteamID>\ER0000.cnv（独立于原版 .sl2）'
+    if (Get-SeamlessEnabled) {
+        Write-Host '  存档：%APPDATA%\EldenRing\<SteamID>\ER0000.cnv.co2（Seamless 联机存档）'
+    } else {
+        Write-Host '  存档：%APPDATA%\EldenRing\<SteamID>\ER0000.cnv（独立于原版 .sl2）'
+    }
     return $ok
 }
 
@@ -847,7 +943,10 @@ function Invoke-Rand {
     $highLines = @(Get-ExtraModLines 'high')
     $core = @(('RNG_Lands_Base=' + $base), ('RNG_Lands_Randomizer=' + $RandomDir))
     $modLines = (@($lowLines) + $core + @($highLines)) -join "`r`n"
-    $dllLines = 'randomizer_crashfix=..\randomizer\dll\RandomizerCrashFix.dll|early'
+    $dllParts = @('randomizer_crashfix=..\randomizer\dll\RandomizerCrashFix.dll|early')
+    $seamlessLine = Get-SeamlessDllLine
+    if ($seamlessLine) { $dllParts += $seamlessLine }
+    $dllLines = $dllParts -join "`r`n"
     if ($DryRun) { Show-IniDry $modLines $dllLines; return }
     Write-IniFile $modLines $dllLines
     [void](Start-YafGame)
@@ -870,7 +969,11 @@ function Invoke-Vanilla([switch]$ChooseFirst) {
     $lowLines = @(Get-ExtraModLines 'low')
     $highLines = @(Get-ExtraModLines 'high')
     $modLines = (@($lowLines) + @('RNG_Lands_Base=' + $full) + @($highLines)) -join "`r`n"
-    $dllLines = '; 无敌人随机模式：不需要额外 DLL'
+    $dllParts = @()
+    $seamlessLine = Get-SeamlessDllLine
+    if ($seamlessLine) { $dllParts += $seamlessLine }
+    if ($dllParts.Count -eq 0) { $dllParts = @('; 无敌人随机模式：不需要额外 DLL') }
+    $dllLines = $dllParts -join "`r`n"
     if ($DryRun) { Show-IniDry $modLines $dllLines; return }
     Write-IniFile $modLines $dllLines
     [void](Start-YafGame)
@@ -956,6 +1059,13 @@ function Show-Status {
         $extraText += '）'
         Write-Host $extraText
     }
+    if (Get-SeamlessEnabled) {
+        $sState = '开启'
+        if (-not (Test-Path -LiteralPath $SeamlessDll)) { $sState = '开启（但 DLL 缺失！）' }
+        Write-Host ('  Seamless   : ' + $sState + '（无缝联机，主菜单 [8] 切换）')
+    } else {
+        Write-Host '  Seamless   : 关闭（无缝联机，主菜单 [8] 切换）'
+    }
     if ($latest) {
         if ($latest.HasEnemy) { $tag = '有敌人随机' } else { $tag = '未勾选敌人随机' }
         Write-Host ('  随机器输出 : ' + $latest.Time.ToString('yyyy-MM-dd HH:mm:ss') + '（' + $tag + '）')
@@ -990,6 +1100,7 @@ function Show-Menu {
         Write-Host ' [5] 先换默认包，再启动无随机版'
         Write-Host ' [6] 设置游戏路径（自动检测 / 浏览选择，会记住）'
         Write-Host ' [7] 其他 mod（叠加别的 mod；含 regulation 的可随机化时合并）'
+        Write-Host ' [8] Seamless Co-op 无缝联机 mod：开 / 关（固定集成）'
         Write-Host ' [0] 退出'
         Write-Host ' 直接回车 = [3] 启动无敌人随机（默认包）'
         Write-Host '=============================================================='
@@ -1004,6 +1115,7 @@ function Show-Menu {
             '5'   { if (Select-Pack (Get-Packs)) { Invoke-Vanilla }; Pause-Any }
             '6'   { [void](Set-GameRootInteractive); Pause-Any }
             '7'   { Show-ExtraModsMenu }
+            '8'   { Show-SeamlessMenu }
             '0'   { return }
             default { }
         }
@@ -1014,6 +1126,7 @@ function Show-Help {
     Write-Host '用法：'
     Write-Host '  双击 启动_RNG_Lands_整合版.bat 打开菜单（推荐）'
     Write-Host '  主菜单 [1] 选默认包 → [3] 直接玩；[4] 随机化 → [2] 玩随机版'
+    Write-Host '  主菜单 [8] 开关 Seamless Co-op（无缝联机；固定集成在 _mods\SeamlessCoop）'
     Write-Host ''
     Write-Host '命令行（调试用）：'
     Write-Host '  ... -Action list'
@@ -1028,6 +1141,9 @@ function Show-Help {
     Write-Host '  ... -Action extpriority -Index 1             （切换低/高优先级）'
     Write-Host '  ... -Action extmerge -Index 1                （随机化合并开关）'
     Write-Host '  ... -Action extremove -Index 1               （删除）'
+    Write-Host '  ... -Action seamlesson                       （开启 Seamless Co-op）'
+    Write-Host '  ... -Action seamlessoff                      （关闭 Seamless Co-op）'
+    Write-Host '  ... -Action seamless                         （查看/切换 Seamless 开关）'
 }
 
 # ---------------------------------------------------------------- 入口
@@ -1086,6 +1202,24 @@ try {
         'rand'       { Invoke-Rand }
         'vanilla'    { Invoke-Vanilla }
         'randomizer' { Invoke-Randomizer }
+        'seamless'   {
+            if (Get-SeamlessEnabled) {
+                Set-SeamlessEnabled $false
+                Write-Ok 'Seamless Co-op 已关闭'
+            } else {
+                if (-not (Test-Path -LiteralPath $SeamlessDll)) { Write-Err ('找不到 DLL：' + $SeamlessDll); exit 1 }
+                Set-SeamlessEnabled $true
+                Write-Ok 'Seamless Co-op 已开启（下次启动游戏生效）'
+            }
+            Show-Status
+        }
+        'seamlesson' {
+            if (-not (Test-Path -LiteralPath $SeamlessDll)) { Write-Err ('找不到 DLL：' + $SeamlessDll + '（先解压到 _mods\SeamlessCoop）'); exit 1 }
+            Set-SeamlessEnabled $true
+            Write-Ok 'Seamless Co-op 已开启（下次启动游戏生效）'
+            Show-Status
+        }
+        'seamlessoff' { Set-SeamlessEnabled $false; Write-Ok 'Seamless Co-op 已关闭'; Show-Status }
         'help'       { Show-Help }
     }
 } catch {

@@ -46,6 +46,8 @@ log_level=info
 ; 条件：early / data_ready / delay,毫秒 / after,名字（互斥）；不写 = SteamAPI_Init 之后
 [dll]
 @DLL_LINES@
+; Seamless Co-op（无缝联机）：主菜单 [8] 开关；开启时启动器会在这里写
+;   seamlesscoop=<paly>\_mods\SeamlessCoop\ersc.dll
 ; 独立存档 dll（可选，默认不用）：本机 alt-saves.log 显示它在游戏 1.17 上 panic，
 ; 且独立存档已由上面的 replace_save_filename=.cnv 实现。要试就删掉行首分号：
 ;eldenring_alt_saves=dll\eldenring_alt_saves.dll
