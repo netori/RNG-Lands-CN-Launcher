@@ -1,5 +1,17 @@
 # Changelog / 更新日志
 
+## [1.4.0] - 2026-10-19
+
+- **独立存档改成整合包独有，不再和 法魂 mod 串档**：存档扩展名从 `.cnv` 改成 `.rnglands`
+  （`ER0000.sl2` → `ER0000.rnglands`），Seamless Co-op 联机存档同步改成 `ER0000.rnglands.co2`。
+  - 原因：`法魂mod`（以及其它一些整合包）也用 `replace_save_filename=.cnv`，两个 mod 共用
+    `ER0000.cnv`，来回切换会看到同一份角色/进度。
+  - 旧的 `ER0000.cnv` 不会被删除或修改；本整合包从 `ER0000.rnglands` 重新开始。
+  - 想沿用旧进度：手动把 `ER0000.cnv` 复制/改名为 `ER0000.rnglands`
+    （注意旧文件可能混着其它 mod 的进度）。
+  - 启动时若只有旧 `.cnv`、还没有 `.rnglands`，会打印提醒；状态栏（含 `-Action list`）显示当前存档名。
+  - 主菜单 Seamless 说明、启动提示、README / 启动说明同步更新。
+
 ## [1.3.0] - 2026-10-19
 
 - **固定集成 Seamless Co-op v2.0.1（无缝联机）**：菜单 `[8]` 开 / 关，默认关闭。

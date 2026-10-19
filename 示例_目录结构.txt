@@ -37,6 +37,8 @@ RNG Lands 整合启动器 —— 需要的目录结构
   要改通用设置请改 _launcher\YAFSML.ini.tpl。
 - randomizer\ 里必须是「已经随机化过一次」的目录（没有 spoiler_logs 时菜单会提示先去随机化）。
 - Seamless Co-op 是可选固定集成：把其 SeamlessCoop 文件夹里的内容解压到 _mods\SeamlessCoop\，
-  然后菜单 [8] 开关；不开时完全不加载，联机存档 ER0000.cnv.co2 与单机分开。
+  然后菜单 [8] 开关；不开时完全不加载，联机存档 ER0000.rnglands.co2 与单机分开。
 - 其他 mod 可以放在任意位置，用菜单 [7] 添加即可（不会被移动/复制进本目录）；
   要在随机化时一起合并的 mod，记得在菜单里给它打开「随机化时合并」（[M]）。
+- 独立存档是本整合包独有的（v1.4.0 起）：存档扩展名 .rnglands（ER0000.sl2 -> ER0000.rnglands），
+  不和 法魂 等用 .cnv 的 mod 共用；旧的 ER0000.cnv 不会被删改。

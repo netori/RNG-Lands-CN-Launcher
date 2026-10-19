@@ -9,11 +9,12 @@ YAFSML 注入式加载器统一起启动的小工具：
 - **可以叠加其他 mod**：菜单 `[7]` 添加任意 mod 目录（低 / 高优先级），勾选「随机化合并」后
   `[4]` 打开的随机器会生成一份合并清单（Mod Engine toml），把附加 mod 和 RNG Lands 包一起合并；
 - **内置 Seamless Co-op 无缝联机开关**：菜单 `[8]` 开 / 关（v2.0.1，文件放 `_mods\SeamlessCoop\`，
-  开时由 YAFSML 加载 `ersc.dll`，联机存档 `ER0000.cnv.co2` 与单机隔离；本仓库不附带二进制）；
+  开时由 YAFSML 加载 `ersc.dll`，联机存档 `ER0000.rnglands.co2` 与单机隔离；本仓库不附带二进制）；
 - **游戏路径不用手填**：首次自动检测（Steam 库 / 整合包附近 / 常见目录），
   找不到或想换时用菜单 `[6]` 选择，结果保存在 `_launcher\game_path.txt`；
 - YAFSML 是运行时注入，**游戏目录一个文件都不会改**；
-- 独立存档：`ER0000.sl2` → `ER0000.cnv`（和原版存档天然隔离）。
+- 独立存档：`ER0000.sl2` → `ER0000.rnglands`（**本整合包独有**：和原版、以及 法魂 等用 `.cnv` 的 mod
+  都不串档；旧版曾用 `.cnv`，会和 法魂 共用同一份存档）。
 
 > 本仓库 **只包含启动脚本**，不包含任何游戏本体 / mod / 补丁文件。
 > 你需要自己准备：Elden Ring 1.17.x、RNG Lands 0.7.2 的包、本项目的汉化补丁、
@@ -115,7 +116,7 @@ YAFSML 注入式加载器统一起启动的小工具：
 
 注意：
 
-- **存档**：开启后联机存档是 `ER0000.cnv.co2`（与单机 `ER0000.cnv` 分开）；
+- **存档**：开启后联机存档是 `ER0000.rnglands.co2`（与单机 `ER0000.rnglands` 分开）；
 - **密码**：改 `_mods\SeamlessCoop\ersc_settings.ini` 里的 `cooppassword`，队友填同一个；
 - **版本**：联机双方的游戏版本、Seamless 版本必须一致；
 - 与随机化 / 其他 mod 叠加属于附加组合，稳定性不保证：联机异常时先 `[8]` 关掉它，单机复现问题；
@@ -134,7 +135,10 @@ YAFSML 注入式加载器统一起启动的小工具：
 - 有随机模式会给 `RandomizerCrashFix.dll` 配 `|early`（基础+DLC 敌人一起随机时防崩溃）。
 - Seamless Co-op（菜单 `[8]`）开启时往 `[dll]` 追加 `seamlesscoop=<绝对路径>\ersc.dll`（不写加载条件），
   状态记在 `_launcher\seamless_enabled.txt`；关闭时这一行完全不出现。
-- 独立存档/不写 regulation 标记：`replace_save_filename=.cnv` + `prevent_regulation_save_write=1`。
+- 独立存档/不写 regulation 标记：`replace_save_filename=.rnglands` + `prevent_regulation_save_write=1`。
+- 存档扩展名 `.rnglands` 是本整合包独有的（v1.4.0 起）：以前用 `.cnv`，和 法魂 mod 的独立存档同名，
+  两个 mod 来回切会看到同一份角色/进度。旧的 `ER0000.cnv` 不会被删改；想沿用旧进度就手动复制成
+  `ER0000.rnglands`（那份文件可能混着别的 mod 的进度，自己确认）。
 
 ## 排障
 

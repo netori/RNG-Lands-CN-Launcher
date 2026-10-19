@@ -92,7 +92,7 @@ Seamless Co-op 是「固定集成」的：文件固定放 `_mods\SeamlessCoop\`�
 
 注意：
 
-- 联机存档 `ER0000.cnv.co2`，与单机 `ER0000.cnv` 分开；
+- 联机存档 `ER0000.rnglands.co2`，与单机 `ER0000.rnglands` 分开；
 - 改 `_mods\SeamlessCoop\ersc_settings.ini` 里的 `cooppassword`（队友要一样）；
 - 双方游戏版本 + Seamless 版本必须一致；
 - 和随机 / 其他 mod 一起用属于附加组合，出问题先 `[8]` 关掉再单机排查。
@@ -104,10 +104,14 @@ Seamless Co-op 是「固定集成」的：文件固定放 `_mods\SeamlessCoop\`�
 
 ## 存档
 
-- 独立存档：`%APPDATA%\EldenRing\<SteamID>\ER0000.cnv`
-- 开了 Seamless Co-op（菜单 `[8]`）时联机存档是 `ER0000.cnv.co2`（同目录，和单机分开）
+- 独立存档（本整合包独有）：`%APPDATA%\EldenRing\<SteamID>\ER0000.rnglands`
+  （v1.4.0 起；以前是 `ER0000.cnv`，和 法魂 mod 的独立存档同名会串档）
+- 开了 Seamless Co-op（菜单 `[8]`）时联机存档：同目录 `ER0000.rnglands.co2`
 - 原版存档：同目录 `ER0000.sl2` —— 两边隔离，互不覆盖
-- 机制：`replace_save_filename=.cnv` + `prevent_regulation_save_write=1`
+- 机制：`replace_save_filename=.rnglands` + `replace_seamless_coop_save_filename=.rnglands.co2`
+  + `prevent_regulation_save_write=1`
+- **旧存档 `ER0000.cnv` 不会被删改**；想沿用旧进度：退出游戏后把 `ER0000.cnv` 复制/改名为
+  `ER0000.rnglands`（那份文件可能同时被 法魂 用过，自己确认进度对不对）
 
 ## 日志 / 排障
 

@@ -1,4 +1,4 @@
-; =====================================================================
+﻿; =====================================================================
 ;  RNG Lands（随机暗黑）整合启动器 · YAFSML 配置模板
 ;  ---------------------------------------------------------------------
 ;  这个文件是模板，启动器每次启动前会把 [dll] / [mod] 两段分别填进去，
@@ -23,9 +23,10 @@ patch_mem_heap_size=0
 boot_boost=1
 disable_arxan=0
 
-; 独立存档：ER0000.sl2 -> ER0000.cnv（原版存档完全隔离）
-replace_save_filename=.cnv
-replace_seamless_coop_save_filename=.cnv.co2
+; 独立存档：ER0000.sl2 -> ER0000.rnglands（本整合包独有，避免和 法魂 等 mod 的 .cnv 串档）
+replace_save_filename=.rnglands
+; Seamless Co-op 的联机存档同样独立：ER0000.rnglands.co2
+replace_seamless_coop_save_filename=.rnglands.co2
 
 enable_ime=0
 
@@ -49,7 +50,7 @@ log_level=info
 ; Seamless Co-op（无缝联机）：主菜单 [8] 开关；开启时启动器会在这里写
 ;   seamlesscoop=<paly>\_mods\SeamlessCoop\ersc.dll
 ; 独立存档 dll（可选，默认不用）：本机 alt-saves.log 显示它在游戏 1.17 上 panic，
-; 且独立存档已由上面的 replace_save_filename=.cnv 实现。要试就删掉行首分号：
+; 且独立存档已由上面的 replace_save_filename=.rnglands 实现。要试就删掉行首分号：
 ;eldenring_alt_saves=dll\eldenring_alt_saves.dll
 
 

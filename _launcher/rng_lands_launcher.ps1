@@ -52,6 +52,10 @@ $SeamlessDir   = Join-Path $Paly '_mods\SeamlessCoop'
 $SeamlessDll   = Join-Path $SeamlessDir 'ersc.dll'
 $SeamlessIni   = Join-Path $SeamlessDir 'ersc_settings.ini'
 $SeamlessState = Join-Path $LauncherDir 'seamless_enabled.txt'
+# 本整合包独有的独立存档（避免和 法魂 等用 .cnv 的 mod 串档）
+$SaveExt       = '.rnglands'
+$SaveName      = 'ER0000' + $SaveExt
+$SaveNameCoop  = $SaveName + '.co2'
 $script:CacheGameRoot = $null
 
 # ---------------------------------------------------------------- 输出小工具
@@ -674,7 +678,7 @@ function Show-SeamlessMenu {
         Write-Host ''
         Write-Host '  说明：' -ForegroundColor Yellow
         Write-Host '   - 开启后启动游戏时由 YAFSML 加载 ersc.dll；关掉就完全不加载（游戏回到纯单机）。'
-        Write-Host '   - 联机存档独立：ER0000.cnv.co2（不覆盖单机存档 ER0000.cnv）。'
+        Write-Host ('   - 联机存档独立：' + $SaveNameCoop + '（不覆盖单机存档 ' + $SaveName + '）。')
         Write-Host '   - 联机要求：游戏版本一致 + Steam 在线 + 同一密码（ersc_settings.ini 里 cooppassword）；'
         Write-Host '     队友也要装同版本 Seamless Co-op。'
         Write-Host '   - 与随机 mod 叠加不保证稳定：联机异常时先关掉它，用单机模式复现问题。'
@@ -843,6 +847,16 @@ function Start-YafGame {
     if (-not (Test-Path -LiteralPath $gameExe)) { Write-Err ('游戏路径无效（找不到 Game\eldenring.exe）：' + $erRoot); return $false }
     Write-Host ('  游戏：' + $gameExe)
     if (Get-SeamlessEnabled) { Write-Host '  联机 mod：Seamless Co-op 已开启' }
+    # 旧共用存档提醒：v1.4.0 之前用 ER0000.cnv（和 法魂 等 mod 共用），现在本整合包用 ER0000.rnglands
+    $erSaveDir = Join-Path $env:APPDATA 'EldenRing'
+    if (Test-Path -LiteralPath $erSaveDir) {
+        $legacySaves = @(Get-ChildItem -LiteralPath $erSaveDir -Recurse -File -Filter 'ER0000.cnv' -ErrorAction SilentlyContinue)
+        $newSaves = @(Get-ChildItem -LiteralPath $erSaveDir -Recurse -File -Filter $SaveName -ErrorAction SilentlyContinue)
+        if ($legacySaves.Count -gt 0 -and $newSaves.Count -eq 0) {
+            Write-Warn ('旧存档 ER0000.cnv 未动：它和 法魂 等用 .cnv 的 mod 是同一个文件；本整合包现在用 ' + $SaveName + '，不会自动搬过去。')
+            Write-Warn ('想沿用旧进度：退出游戏后把 ER0000.cnv 复制/改名为 ' + $SaveName + '（旧文件可能混着别的 mod 的进度，自己判断）。')
+        }
+    }
     if ($NoLaunch) {
         Write-Warn '[-NoLaunch] 只写配置，不启动 YAFSML。'
         return $true
@@ -869,9 +883,9 @@ function Start-YafGame {
     }
     Write-Host ('  日志：' + $RandomLog)
     if (Get-SeamlessEnabled) {
-        Write-Host '  存档：%APPDATA%\EldenRing\<SteamID>\ER0000.cnv.co2（Seamless 联机存档）'
+        Write-Host ('  存档：%APPDATA%\EldenRing\<SteamID>\' + $SaveNameCoop + '（Seamless 联机存档；本整合包独有）')
     } else {
-        Write-Host '  存档：%APPDATA%\EldenRing\<SteamID>\ER0000.cnv（独立于原版 .sl2）'
+        Write-Host ('  存档：%APPDATA%\EldenRing\<SteamID>\' + $SaveName + '（本整合包独有，独立于原版 .sl2）')
     }
     return $ok
 }
@@ -1066,6 +1080,9 @@ function Show-Status {
     } else {
         Write-Host '  Seamless   : 关闭（无缝联机，主菜单 [8] 切换）'
     }
+    $saveShown = $SaveName
+    if (Get-SeamlessEnabled) { $saveShown = $SaveName + '（联机：' + $SaveNameCoop + '）' }
+    Write-Host ('  独立存档   : ' + $saveShown + '（本整合包独有，不和 法魂 等 .cnv 共用）')
     if ($latest) {
         if ($latest.HasEnemy) { $tag = '有敌人随机' } else { $tag = '未勾选敌人随机' }
         Write-Host ('  随机器输出 : ' + $latest.Time.ToString('yyyy-MM-dd HH:mm:ss') + '（' + $tag + '）')
