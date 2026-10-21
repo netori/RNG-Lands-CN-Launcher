@@ -68,29 +68,75 @@ function Write-Ok([string]$Text)   { Write-Host ('  [OK] '   + $Text) -Foregroun
 function Write-Warn([string]$Text) { Write-Host ('  [提示] ' + $Text) -ForegroundColor Yellow }
 function Write-Err([string]$Text)  { Write-Host ('  [错误] ' + $Text) -ForegroundColor Red }
 function Pause-Any { Write-Host ''; [void](Read-Host '按回车返回菜单') }
+# 路径安全工具：配置里可能留着别的电脑的路径（比如 game_path.txt 里的 F:\），
+# Join-Path/Test-Path 遇到不存在的盘符会抛 "Cannot find drive. A drive with the name 'F' does not exist."，
+# 启动器直接崩。所有来自配置/日志/注册表的路径都先过这几个函数。
+function Test-DriveExists([string]$Path) {
+    if (-not $Path) { return $false }
+    if ($Path -like '\\*') { return $true }
+    if ($Path -match '^([A-Za-z]):') {
+        try { return (Test-Path -LiteralPath ($Matches[1] + ':\') -ErrorAction Stop) } catch { return $false }
+    }
+    return $true
+}
+
+function Test-PathLeaf([string]$Path) {
+    if (-not $Path) { return $false }
+    if (-not (Test-DriveExists $Path)) { return $false }
+    try { return (Test-Path -LiteralPath $Path -PathType Leaf -ErrorAction Stop) } catch { return $false }
+}
+
+function Join-PathSafe([string]$Parent, [string]$Child) {
+    if (-not $Parent) { return $null }
+    if (-not (Test-DriveExists $Parent)) { return $null }
+    try { return (Join-Path $Parent $Child -ErrorAction Stop) } catch { return $null }
+}
+
 # ---------------------------------------------------------------- 游戏路径
 # 游戏路径不写死：优先读 _launcher\game_path.txt（用户选择/自动检测后保存），
 # 其次自动检测（Steam 库 / 整合包附近 / 常见目录），仍找不到就弹选择框。
 function Test-NormalizeGameRoot([string]$Path) {
     if (-not $Path) { return $null }
-    $p = $Path.Trim()
+    $p = ([string]$Path).Trim()
     $p = $p.Trim('"').Trim()
     if (-not $p) { return $null }
-    try { $p = [System.IO.Path]::GetFullPath($p) } catch { return $null }
-    $p = $p.TrimEnd('\')
-    if ((Split-Path $p -Leaf) -ieq 'eldenring.exe') {
-        if (Test-Path -LiteralPath $p -PathType Leaf) { $p = Split-Path (Split-Path $p -Parent) -Parent } else { return $null }
+    # 盘符不存在就别往下走（Join-Path 会抛 Cannot find drive）
+    if (-not (Test-DriveExists $p)) { return $null }
+    if ($p -notmatch '^[A-Za-z]:[\\/]' -and $p -notmatch '^\\\\') {
+        try { $p = [System.IO.Path]::GetFullPath($p) } catch { return $null }
     }
-    if (Test-Path -LiteralPath (Join-Path $p 'eldenring.exe') -PathType Leaf) { return (Split-Path $p -Parent) }
-    if (Test-Path -LiteralPath (Join-Path $p 'Game\eldenring.exe') -PathType Leaf) { return $p }
+    $p = $p.TrimEnd('\')
+    if ([System.IO.Path]::GetFileName($p) -ieq 'eldenring.exe') {
+        if (-not (Test-PathLeaf $p)) { return $null }
+        $p = [System.IO.Path]::GetDirectoryName($p)   # ...\Game
+        if ($p) { $p = [System.IO.Path]::GetDirectoryName($p) }  # 版本根目录
+        if (-not $p) { return $null }
+    }
+    $exe = Join-PathSafe $p 'eldenring.exe'
+    if ($exe -and (Test-PathLeaf $exe)) {
+        $parent = [System.IO.Path]::GetDirectoryName($p)
+        if ($parent) { return $parent }
+        return $null
+    }
+    $exe2 = Join-PathSafe $p 'Game\eldenring.exe'
+    if ($exe2 -and (Test-PathLeaf $exe2)) { return $p }
     return $null
 }
 
 function Get-SavedGameRoot {
     if (-not (Test-Path -LiteralPath $GamePathFile)) { return $null }
-    $line = Get-Content -LiteralPath $GamePathFile -TotalCount 1 -Encoding UTF8 -ErrorAction SilentlyContinue
+    $line = ''
+    try { $line = Get-Content -LiteralPath $GamePathFile -TotalCount 1 -Encoding UTF8 -ErrorAction Stop } catch { return $null }
     if (-not $line) { return $null }
-    return (Test-NormalizeGameRoot ([string]$line))
+    $root = Test-NormalizeGameRoot ([string]$line)
+    if (-not $root) {
+        # 分享整合包时常见的坑：记录的是别人电脑上的路径（盘符/目录在本机不存在）
+        Write-Warn ('已保存的游戏路径无效：' + ([string]$line).Trim())
+        Write-Warn '已清除这条记录，改为自动检测游戏路径…'
+        try { Remove-Item -LiteralPath $GamePathFile -Force -ErrorAction Stop } catch { }
+        return $null
+    }
+    return $root
 }
 
 function Save-GameRoot([string]$Root) {
@@ -109,8 +155,8 @@ function Find-SteamGameRoots {
     $libs = New-Object System.Collections.Generic.List[string]
     if ($steamPath) {
         $libs.Add($steamPath)
-        $vdf = Join-Path $steamPath 'steamapps\libraryfolders.vdf'
-        if (Test-Path -LiteralPath $vdf) {
+        $vdf = Join-PathSafe $steamPath 'steamapps\libraryfolders.vdf'
+        if ($vdf -and (Test-Path -LiteralPath $vdf)) {
             try {
                 $txt = Get-Content -LiteralPath $vdf -Raw -Encoding UTF8 -ErrorAction Stop
                 foreach ($m in [regex]::Matches($txt, '"path"\s+"([^"]+)"')) {
@@ -121,7 +167,7 @@ function Find-SteamGameRoots {
     }
     foreach ($l in $libs) {
         foreach ($sub in @('steamapps\common\ELDEN RING', 'steamapps\common\ELDEN RING\Game')) {
-            $r = Test-NormalizeGameRoot (Join-Path $l $sub)
+            $r = Test-NormalizeGameRoot (Join-PathSafe $l $sub)
             if ($r) { $roots.Add($r) }
         }
     }
@@ -131,21 +177,26 @@ function Find-SteamGameRoots {
 function Find-NearbyGameRoots {
     $roots = New-Object System.Collections.Generic.List[string]
     $dir = $LauncherDir
-    for ($depth = 0; $depth -lt 4; $depth++) {
-        if (-not $dir) { break }
+    for ($depth = 0; $depth -lt 6; $depth++) {
+        if (-not $dir -or -not (Test-DriveExists $dir)) { break }
+        # 整合包直接放在游戏目录里（<版本根>\Game\<整合包>\）时，祖先目录本身可能就是游戏目录
+        $self = Test-NormalizeGameRoot $dir
+        if ($self) { $roots.Add($self) }
         foreach ($pat in @('ELDEN RING*', '*ELDEN*', '*elden*', '*Ring*')) {
-            $dirs = Get-ChildItem -LiteralPath $dir -Directory -Filter $pat -ErrorAction SilentlyContinue | Select-Object -First 40
+            $dirs = @()
+            try { $dirs = @(Get-ChildItem -LiteralPath $dir -Directory -Filter $pat -ErrorAction SilentlyContinue | Select-Object -First 40) } catch { }
             foreach ($d in $dirs) {
                 $r = Test-NormalizeGameRoot $d.FullName
                 if ($r) { $roots.Add($r) }
-                $subs = Get-ChildItem -LiteralPath $d.FullName -Directory -ErrorAction SilentlyContinue | Select-Object -First 40
+                $subs = @()
+                try { $subs = @(Get-ChildItem -LiteralPath $d.FullName -Directory -ErrorAction SilentlyContinue | Select-Object -First 40) } catch { }
                 foreach ($d2 in $subs) {
                     $r2 = Test-NormalizeGameRoot $d2.FullName
                     if ($r2) { $roots.Add($r2) }
                 }
             }
         }
-        $dir = Split-Path $dir -Parent
+        $dir = [System.IO.Path]::GetDirectoryName($dir)
     }
     return @($roots | Select-Object -Unique)
 }
@@ -168,7 +219,7 @@ function Find-CommonGameRoots {
     )
     foreach ($d in $drives) {
         foreach ($rel in $rels) {
-            $r = Test-NormalizeGameRoot (Join-Path $d $rel)
+            $r = Test-NormalizeGameRoot (Join-PathSafe $d $rel)
             if ($r) { $roots.Add($r) }
         }
     }
@@ -219,7 +270,7 @@ function Pick-ExeDialog([string]$Title) {
         $dlg.Title = $Title
         $dlg.Filter = 'eldenring.exe|eldenring.exe|所有文件|*.*'
         $cur = Resolve-GameRoot
-        if ($cur) { $dlg.InitialDirectory = (Join-Path $cur 'Game') }
+        if ($cur) { $dlg.InitialDirectory = (Join-PathSafe $cur 'Game') }
         if ($dlg.ShowDialog() -eq [System.Windows.Forms.DialogResult]::OK) { return $dlg.FileName }
     } catch { }
     return $null
@@ -936,7 +987,7 @@ function Show-IniDry([string]$ModLines, [string]$DllLines) {
     foreach ($line in ($ModLines -split "`r?`n")) {
         if ($line -match '^\s*(RNG_Lands_Base|RNG_Lands_Randomizer|Extra_[A-Za-z]+_\d+)\s*=\s*(.+)$') {
             $k = $Matches[1]; $v = $Matches[2].Trim()
-            $exists = Test-Path -LiteralPath $v
+            $exists = ((Test-DriveExists $v) -and (Test-Path -LiteralPath $v))
             Write-Host ('  ' + $k + ' -> ' + $v + '  (存在=' + $exists + ')')
         }
     }
@@ -944,8 +995,8 @@ function Show-IniDry([string]$ModLines, [string]$DllLines) {
         if ($line -match '^\s*([A-Za-z0-9_]+)\s*=\s*(.+)$') {
             $k = $Matches[1]; $v = $Matches[2].Trim()
             $vPath = ($v -split '\|')[0].Trim()
-            if (-not [System.IO.Path]::IsPathRooted($vPath)) { $vPath = Join-Path $YafDir $vPath }
-            $exists = Test-Path -LiteralPath $vPath
+            if (-not [System.IO.Path]::IsPathRooted($vPath)) { $vPath = Join-PathSafe $YafDir $vPath }
+            $exists = ((Test-DriveExists $vPath) -and (Test-Path -LiteralPath $vPath))
             Write-Host ('  dll.' + $k + ' -> ' + $v + '  (存在=' + $exists + ')')
         }
     }
@@ -1376,5 +1427,9 @@ try {
 } catch {
     Write-Err ('运行出错：' + $_.Exception.Message)
     Write-Host ('  位置：' + $_.InvocationInfo.PositionMessage) -ForegroundColor DarkGray
+    if ([string]$_.Exception.Message -match 'Cannot find drive') {
+        Write-Warn '这通常是配置里留着别的电脑的路径（比如 game_path.txt 里的盘符在本机不存在）。'
+        Write-Warn ('删掉 ' + $GamePathFile + ' 后重新运行，或进菜单 [6] 重新选择游戏路径。')
+    }
     exit 1
 }

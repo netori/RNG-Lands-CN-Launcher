@@ -1,5 +1,17 @@
 # Changelog / 更新日志
 
+## [1.4.3] - 2026-10-21
+
+- **修分享出去的整合包在别人电脑上一启动就报 `Cannot find drive. A drive with the name 'F' does not exist.`**：
+  整合包里带着上一台电脑的 `_launcher\game_path.txt`（`F:\...` 之类本机没有的盘符），旧版解析
+  游戏路径时 `Join-Path` 直接抛异常退出。
+  - 所有来自配置/日志的路径先做盘符与存在性检查，缺盘符不再抛异常；
+  - 记录的路径失效时提示并**自动清除**，重新自动检测（菜单 `[6]` 重选照旧可用）；
+  - 自动检测新增「从整合包所在目录逐级向上找」：整合包解压进游戏目录
+    （`...\ELDEN RING\Game\RNG LANDS paly\`）也能直接识别；
+  - 顶层异常对 `Cannot find drive` 给出中文指引（删 `game_path.txt` / 菜单 `[6]`）。
+- 文档：排障补游戏路径/整合包位置相关说明，命令行示例补 `seamlesspass`。
+
 ## [1.4.2] - 2026-10-21
 
 - **修 Seamless 的 `Translation file for locale "schinese" not found; will use fallback "english"` 警告**：

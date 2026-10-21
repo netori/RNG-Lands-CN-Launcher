@@ -10,8 +10,9 @@ YAFSML 注入式加载器统一起启动的小工具：
   `[4]` 打开的随机器会生成一份合并清单（Mod Engine toml），把附加 mod 和 RNG Lands 包一起合并；
 - **内置 Seamless Co-op 无缝联机开关**：菜单 `[8]` 开 / 关（v2.0.1，文件放 `_mods\SeamlessCoop\`，
   开时由 YAFSML 加载 `ersc.dll`，联机存档 `ER0000.rnglands.co2` 与单机隔离；本仓库不附带二进制）；
-- **游戏路径不用手填**：首次自动检测（Steam 库 / 整合包附近 / 常见目录），
-  找不到或想换时用菜单 `[6]` 选择，结果保存在 `_launcher\game_path.txt`；
+- **游戏路径不用手填**：首次自动检测（Steam 库 / 整合包附近 / 常见目录；整合包放进游戏目录里也能识别），
+  找不到或想换时用菜单 `[6]` 选择，结果保存在 `_launcher\game_path.txt`
+  （v1.4.3 起旧电脑留下的失效路径会自动清掉后重新检测）；
 - YAFSML 是运行时注入，**游戏目录一个文件都不会改**；
 - 独立存档：`ER0000.sl2` → `ER0000.rnglands`（**本整合包独有**：和原版、以及 法魂 等用 `.cnv` 的 mod
   都不串档；旧版曾用 `.cnv`，会和 法魂 共用同一份存档）。
@@ -71,6 +72,11 @@ YAFSML 注入式加载器统一起启动的小工具：
 选 `Game` 文件夹、`eldenring.exe` 或版本根目录都可以，会自动换算成版本根目录并保存。
 
 > 换电脑、移动游戏目录后按 `[6]` 重选一次即可；删掉 `_launcher\game_path.txt` 会重新自动检测。
+
+把整合包直接解压进游戏目录（`...\ELDEN RING\Game\RNG LANDS paly\`）也能用：自动检测会从所在位置
+逐级往上找游戏目录（v1.4.3 起）。分享整合包给别人时**不用删** `_launcher\game_path.txt` ——
+里面若是别的电脑的路径（比如盘符不存在），v1.4.3 会提示并自动清除、重新检测；
+旧版本会在这里报 `Cannot find drive ... does not exist`。
 
 ### 叠加其他 mod（菜单 `[7]`）
 
@@ -154,6 +160,9 @@ YAFSML 注入式加载器统一起启动的小工具：
 - 日志：`yafsml\log\YAFSML.log`（每次启动重写）。健康的样子应包含
   `INFO: [mod] added mod RNG_Lands_Base ...`（有随机模式还有 `RNG_Lands_Randomizer`）。
 - 游戏没启动：**不要用管理员身份运行**；游戏路径可用菜单 `[6]` 重新检测/选择。
+- 启动红字 `Cannot find drive. A drive with the name 'X' does not exist.`：v1.4.2 及更早版本
+  拿着别的电脑留下的 `_launcher\game_path.txt`（盘符在本机不存在）去解析路径。
+  升级到 v1.4.3 会自动清掉并重找；旧版就手动删 `_launcher\game_path.txt`，或进菜单 `[6]` 重选。
 - 敌人刷出时崩溃：把 `_launcher\YAFSML.ini.tpl` 里 `randomizer_crashfix=...|early` 改成不带 `|early`。
 - 附加 mod 没生效：看 `yafsml\log\YAFSML.log` 里有没有 `Extra_low_*` / `Extra_high_*` 的 `[mod] added mod` 行；
   再确认优先级：低优先级会被 RNG Lands 包同名文件覆盖。

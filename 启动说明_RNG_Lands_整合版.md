@@ -47,6 +47,10 @@
 > 选什么都会被自动换算成「版本根目录」（含 `Game` 子目录的那层），并保存到
 > `_launcher\game_path.txt`。换电脑 / 移动了游戏之后，重新按 `[6]` 选一次即可。
 
+> 整合包解压到游戏目录里（`...\ELDEN RING\Game\RNG LANDS paly\`）也能识别：v1.4.3 起自动检测会
+> 从整合包所在目录往上找。分享给别人时不用删 `_launcher\game_path.txt` —— 路径失效
+> （比如盘符在本机不存在）会提示并自动清除、重新检测。
+
 ## 想做「有敌人随机」的流程（推荐）
 
 1. 菜单按 `[1]` 选你要玩的包（比如 `Pack 10 / golden targeted 1 / recommended increased difficulty`）。
@@ -131,6 +135,9 @@ Seamless Co-op 是「固定集成」的：文件固定放 `_mods\SeamlessCoop\`�
 - 进游戏没变化：确认日志里 `[mod] added mod` 是哪个路径；无随机版应只有 `RNG_Lands_Base` 一行。
 - Seamless 弹 `Fatal Error: Please enter a session password`：联机密码为空 → 菜单 `[8]` → `[P]` 设置。
 - 游戏没启动：看日志；确认**不要用管理员身份运行**、游戏路径正确（菜单 `[6]` 可以重新选/自动检测）。
+- 启动红字 `Cannot find drive. A drive with the name 'X' does not exist.`：
+  `_launcher\game_path.txt` 里是别的电脑留下的路径（盘符本机不存在）。v1.4.3 起自动清除并重新检测；
+  旧版手动删掉该文件，或用菜单 `[6]` 重选。
 - 敌人刷出时崩溃：把 `_launcher\YAFSML.ini.tpl` 里 `randomizer_crashfix=...|early` 改成不带 `|early`，
   或注释掉那一行（模板是唯一来源，生成的 ini 不用手改）。
 
@@ -159,4 +166,5 @@ Seamless Co-op 是「固定集成」的：文件固定放 `_mods\SeamlessCoop\`�
   powershell ... -Action seamlesson               # 开启 Seamless Co-op
   powershell ... -Action seamlessoff              # 关闭 Seamless Co-op
   powershell ... -Action seamless                 # 切换开/关并显示状态
+  powershell ... -Action seamlesspass -Password "xxx"   # 设置联机密码
   ```

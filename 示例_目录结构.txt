@@ -36,6 +36,9 @@ RNG Lands 整合启动器 —— 需要的目录结构
 - 启动器每次启动前会生成 yafsml\YAFSML.ini（[mod] 段按你的选择填），不要手改生成的 ini；
   要改通用设置请改 _launcher\YAFSML.ini.tpl。
 - randomizer\ 里必须是「已经随机化过一次」的目录（没有 spoiler_logs 时菜单会提示先去随机化）。
+- 整合包可以放在任意位置，也可以直接解压进游戏目录（<版本根>\Game\RNG LANDS paly\）：
+  v1.4.3 起自动检测会从整合包所在目录逐级向上找游戏目录。
+- 分享给别人时不用删 _launcher\game_path.txt：里面的旧路径若失效（盘符不存在）会自动清除并重新检测。
 - Seamless Co-op 是可选固定集成：把其 SeamlessCoop 文件夹里的内容解压到 _mods\SeamlessCoop\，
   然后菜单 [8] 开关；不开时完全不加载，联机存档 ER0000.rnglands.co2 与单机分开。
 - 其他 mod 可以放在任意位置，用菜单 [7] 添加即可（不会被移动/复制进本目录）；
