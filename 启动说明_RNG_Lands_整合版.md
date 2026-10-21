@@ -97,6 +97,8 @@ Seamless Co-op 是「固定集成」的：文件固定放 `_mods\SeamlessCoop\`�
 - 联机存档 `ER0000.rnglands.co2`，与单机 `ER0000.rnglands` 分开；
 - 必须设置 `cooppassword`（菜单 `[8]` → `[P]`，或改 `_mods\SeamlessCoop\ersc_settings.ini`），队友要一样；
   为空时启动器会拒绝启动，免得进游戏才弹 Fatal Error；
+- 自带简中翻译（`locale\schinese.json`，启动时自动安装），不会弹
+  `Translation file for locale "schinese" not found`；
 - 双方游戏版本 + Seamless 版本必须一致；
 - 和随机 / 其他 mod 一起用属于附加组合，出问题先 `[8]` 关掉再单机排查。
 

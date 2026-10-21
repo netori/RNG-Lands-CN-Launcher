@@ -1,5 +1,14 @@
 # Changelog / 更新日志
 
+## [1.4.2] - 2026-10-21
+
+- **修 Seamless 的 `Translation file for locale "schinese" not found; will use fallback "english"` 警告**：
+  这个 mod 只自带 `english.json`，游戏语言是简中时会在 `locale\` 找 `schinese.json`，找不到就弹警告
+  并显示英文（不致命，但每次都弹）。
+  - 整合包新增简中翻译 `_launcher\seamless-locale\schinese.json`（112 条，与英文版 key 一一对应）；
+  - 启动游戏时（Seamless 开启状态下）自动复制到 `_mods\SeamlessCoop\locale\schinese.json`，
+    缺失或内容不同才写，不会覆盖你手改的版本之外的东西。
+
 ## [1.4.1] - 2026-10-21
 
 - **修 Seamless Co-op 的 `Fatal Error: Please enter a session password`**：这个 mod 要求

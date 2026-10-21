@@ -719,6 +719,30 @@ function Get-SeamlessDllLine {
     }
     return ('seamlesscoop=' + $SeamlessDll)
 }
+function Install-SeamlessLocale {
+    # 游戏语言是 schinese 时，Seamless 会在 locale\ 下找 schinese.json；缺了这个文件会弹
+    # "Translation file for locale ... not found; will use fallback english" 警告并显示英文。
+    # 整合包自带一份简中翻译（_launcher\seamless-locale\schinese.json），缺失或不同就补上。
+    $src = Join-Path $LauncherDir 'seamless-locale\schinese.json'
+    if (-not (Test-Path -LiteralPath $src)) { return }
+    $dstDir = Join-Path $SeamlessDir 'locale'
+    $dst = Join-Path $dstDir 'schinese.json'
+    try {
+        if (-not (Test-Path -LiteralPath $dstDir)) { New-Item -ItemType Directory -Path $dstDir -Force | Out-Null }
+        $need = $true
+        if (Test-Path -LiteralPath $dst) {
+            $h1 = (Get-FileHash -LiteralPath $src -Algorithm SHA256).Hash
+            $h2 = (Get-FileHash -LiteralPath $dst -Algorithm SHA256).Hash
+            if ($h1 -eq $h2) { $need = $false }
+        }
+        if ($need) {
+            Copy-Item -LiteralPath $src -Destination $dst -Force
+            Write-Host '  语言：已安装 Seamless 简中翻译（locale\schinese.json）'
+        }
+    } catch {
+        Write-Warn ('安装 Seamless 简中翻译失败：' + $_.Exception.Message)
+    }
+}
 function Show-SeamlessMenu {
     while ($true) {
         $enabled = Get-SeamlessEnabled
@@ -939,7 +963,7 @@ function Start-YafGame {
     $gameExe = Join-Path $erRoot 'Game\eldenring.exe'
     if (-not (Test-Path -LiteralPath $gameExe)) { Write-Err ('游戏路径无效（找不到 Game\eldenring.exe）：' + $erRoot); return $false }
     Write-Host ('  游戏：' + $gameExe)
-    if (Get-SeamlessEnabled) { Write-Host '  联机 mod：Seamless Co-op 已开启' }
+    if (Get-SeamlessEnabled) { Write-Host '  联机 mod：Seamless Co-op 已开启'; Install-SeamlessLocale }
     # 旧共用存档提醒：v1.4.0 之前用 ER0000.cnv（和 法魂 等 mod 共用），现在本整合包用 ER0000.rnglands
     $erSaveDir = Join-Path $env:APPDATA 'EldenRing'
     if (Test-Path -LiteralPath $erSaveDir) {

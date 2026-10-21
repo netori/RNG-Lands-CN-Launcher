@@ -122,6 +122,8 @@ YAFSML 注入式加载器统一起启动的小工具：
 - **密码**：必须设置（菜单 `[8]` → `[P]`，或 `-Action seamlesspass -Password "xxx"`；
   也可以直接改 `_mods\SeamlessCoop\ersc_settings.ini` 的 `cooppassword`），队友填同一个；
   密码为空时启动器会直接拒绝启动，并提示先去设置；
+- **语言**：整合包自带简中翻译（`_launcher\seamless-locale\schinese.json`），启动时自动复制到
+  `_mods\SeamlessCoop\locale\`，不会再弹 `Translation file for locale "schinese" not found` 的警告；
 - **版本**：联机双方的游戏版本、Seamless 版本必须一致；
 - 与随机化 / 其他 mod 叠加属于附加组合，稳定性不保证：联机异常时先 `[8]` 关掉它，单机复现问题；
 - 换 Seamless 版本：直接替换 `_mods\SeamlessCoop\` 里的文件，开关状态不用动。
