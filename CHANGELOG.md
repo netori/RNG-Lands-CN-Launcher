@@ -1,5 +1,15 @@
 # Changelog / 更新日志
 
+## [1.4.1] - 2026-10-21
+
+- **修 Seamless Co-op 的 `Fatal Error: Please enter a session password`**：这个 mod 要求
+  `_mods\SeamlessCoop\ersc_settings.ini` 里 `[PASSWORD]` 的 `cooppassword` 不能为空，
+  否则一进游戏就直接弹 Fatal Error 退出。
+  - 菜单 `[8]` 新增 `[P] 设置联机密码`（写进 `ersc_settings.ini`，队友要用同一个）；
+  - 密码为空时启动器**直接拒绝启动**并给出设置指引，不再等到游戏里才报错；
+  - 新增命令行 `-Action seamlesspass -Password "你的密码"`；
+  - 状态栏 / Seamless 子菜单显示密码是否已设置。
+
 ## [1.4.0] - 2026-10-19
 
 - **独立存档改成整合包独有，不再和 法魂 mod 串档**：存档扩展名从 `.cnv` 改成 `.rnglands`

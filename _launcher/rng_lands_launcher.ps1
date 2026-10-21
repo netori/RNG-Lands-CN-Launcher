@@ -9,7 +9,7 @@
 #   [3] 启动 无敌人随机（默认包直接玩）   [4] 打开随机器（包路径复制到剪贴板）
 #   [6] 设置游戏路径（自动检测 / 浏览选择；记住到 _launcher\game_path.txt）
 #   [7] 其他 mod（附加加载：可叠别的 mod；含 regulation 的可在随机化时合并）
-#   [8] Seamless Co-op 无缝联机 mod：开 / 关（固定集成，文件在 _mods\SeamlessCoop）
+#   [8] Seamless Co-op 无缝联机 mod：开 / 关（固定集成，文件在 _mods\SeamlessCoop；需设置联机密码）
 #
 # 游戏路径不写死：优先读 _launcher\game_path.txt，其次自动检测
 #（Steam 库 / 整合包附近 / 常见目录），仍找不到就弹选择框。
@@ -18,12 +18,13 @@
 param(
     [ValidateSet('menu', 'list', 'select', 'rand', 'vanilla', 'randomizer', 'help', 'setgame',
              'extlist', 'extadd', 'extremove', 'exttoggle', 'extpriority', 'extmerge',
-             'seamless', 'seamlesson', 'seamlessoff')]
+             'seamless', 'seamlesson', 'seamlessoff', 'seamlesspass')]
     [string]$Action = 'menu',
     [int]$Index = 0,
     [string]$Pack = '',
     [string]$GamePath = '',
     [string]$ModPath = '',
+    [string]$Password = '',
     [switch]$DryRun,
     [switch]$NoLaunch
 )
@@ -653,6 +654,63 @@ function Get-SeamlessVersion {
     }
     return '（未知版本）'
 }
+function Get-SeamlessSetting([string]$Key) {
+    if (-not (Test-Path -LiteralPath $SeamlessIni)) { return '' }
+    $lines = @(Get-Content -LiteralPath $SeamlessIni -Encoding UTF8 -ErrorAction SilentlyContinue)
+    $inSection = $false
+    foreach ($line in $lines) {
+        $t = ([string]$line).Trim()
+        if ($t -match '^\[(.+)\]$') { $inSection = ($Matches[1].Trim() -ieq 'PASSWORD'); continue }
+        if (-not $inSection) { continue }
+        if ($t -match '^([^=;#]+?)\s*=\s*(.*)$') {
+            if ($Matches[1].Trim() -ieq $Key) { return $Matches[2].Trim() }
+        }
+    }
+    return ''
+}
+function Set-SeamlessSetting([string]$Key, [string]$Value) {
+    # 只改 [PASSWORD] 段里对应那一行，保留注释与其它段不动；缺行就补一个 [PASSWORD] 段
+    if (-not (Test-Path -LiteralPath $SeamlessIni)) { return $false }
+    $lines = @([System.IO.File]::ReadAllText($SeamlessIni) -split "`r?`n")
+    $inSection = $false
+    $changed = $false
+    $pattern = '^(\s*)' + [regex]::Escape($Key) + '\s*=\s*'
+    for ($i = 0; $i -lt $lines.Count; $i++) {
+        $t = $lines[$i].Trim()
+        if ($t -match '^\[(.+)\]$') { $inSection = ($Matches[1].Trim() -ieq 'PASSWORD'); continue }
+        if (-not $inSection) { continue }
+        if ($t -match $pattern) {
+            $lines[$i] = $Matches[1] + $Key + ' = ' + $Value
+            $changed = $true
+            break
+        }
+    }
+    if (-not $changed) {
+        $lines = @($lines) + @('', '[PASSWORD]', '', '; Session password', ($Key + ' = ' + $Value))
+    }
+    [System.IO.File]::WriteAllText($SeamlessIni, ($lines -join "`r`n"), (New-Object System.Text.UTF8Encoding($false)))
+    return $true
+}
+function Get-SeamlessPassword { return (Get-SeamlessSetting 'cooppassword') }
+function Get-SeamlessPasswordStatus {
+    $pw = Get-SeamlessPassword
+    if (-not $pw) { return '未设置（不设置就开联机会 Fatal Error）' }
+    return ('已设置（' + $pw.Length + ' 字符）')
+}
+function Test-SeamlessReady {
+    # 开游戏前的硬校验：DLL 在、密码非空。Seamless 的 cooppassword 为空时会直接弹 Fatal Error。
+    if (-not (Get-SeamlessEnabled)) { return $true }
+    if (-not (Test-Path -LiteralPath $SeamlessDll)) {
+        Write-Err ('Seamless Co-op 已开启，但找不到 DLL：' + $SeamlessDll)
+        return $false
+    }
+    if ((Get-SeamlessPassword) -eq '') {
+        Write-Err 'Seamless Co-op 必须设置联机密码（ersc_settings.ini 的 [PASSWORD] cooppassword 不能为空），否则进游戏会弹 Fatal Error: Please enter a session password。'
+        Write-Warn '设置：主菜单 [8] → [P] 输入密码（队友要用同一个密码）；或命令行 -Action seamlesspass -Password "你的密码"。'
+        return $false
+    }
+    return $true
+}
 function Get-SeamlessDllLine {
     if (-not (Get-SeamlessEnabled)) { return '' }
     if (-not (Test-Path -LiteralPath $SeamlessDll)) {
@@ -675,15 +733,19 @@ function Show-SeamlessMenu {
         Write-Host ('  版本     : ' + (Get-SeamlessVersion))
         Write-Host ('  DLL      : ' + $SeamlessDll + '  (存在=' + $hasDll + ')')
         Write-Host ('  配置     : ' + $SeamlessIni + '  (存在=' + (Test-Path -LiteralPath $SeamlessIni) + ')')
+        Write-Host ('  联机密码 : ' + (Get-SeamlessPasswordStatus))
+        if ((Get-SeamlessPassword) -eq '') {
+            Write-Host '    ↑ 必须先设密码再开联机，否则进游戏会弹 Fatal Error（按 [P] 设置）' -ForegroundColor Yellow
+        }
         Write-Host ''
         Write-Host '  说明：' -ForegroundColor Yellow
         Write-Host '   - 开启后启动游戏时由 YAFSML 加载 ersc.dll；关掉就完全不加载（游戏回到纯单机）。'
         Write-Host ('   - 联机存档独立：' + $SaveNameCoop + '（不覆盖单机存档 ' + $SaveName + '）。')
-        Write-Host '   - 联机要求：游戏版本一致 + Steam 在线 + 同一密码（ersc_settings.ini 里 cooppassword）；'
+        Write-Host '   - 联机要求：游戏版本一致 + Steam 在线 + 同一密码（按 [P] 设置；为空会 Fatal Error）；'
         Write-Host '     队友也要装同版本 Seamless Co-op。'
         Write-Host '   - 与随机 mod 叠加不保证稳定：联机异常时先关掉它，用单机模式复现问题。'
         Write-Host ''
-        Write-Host '  [1] 开启    [2] 关闭    [Q] 返回' -ForegroundColor Yellow
+        Write-Host '  [1] 开启    [2] 关闭    [P] 设置联机密码    [Q] 返回' -ForegroundColor Yellow
         $sel = Read-Host '请选择'
         if ($null -eq $sel) { return }
         $sel = $sel.Trim().ToLower()
@@ -692,6 +754,23 @@ function Show-SeamlessMenu {
                 Write-Err ('找不到 DLL：' + $SeamlessDll + '（先把 Seamless Co-op 解压到 _mods\SeamlessCoop）')
                 Pause-Any
             } else {
+                if ((Get-SeamlessPassword) -eq '') {
+                    Write-Warn 'Seamless Co-op 必须设置联机密码才能启动（否则游戏内会报 Fatal Error: Please enter a session password）。'
+                    $pwNew = Read-Host '请输入联机密码（回车 = 取消开启）'
+                    if ($null -eq $pwNew -or -not $pwNew.Trim()) {
+                        Write-Err '未设置密码，本次不开启（可稍后按 [P] 设置）。'
+                        Pause-Any
+                        continue
+                    }
+                    $pwTrim = $pwNew.Trim()
+                    if ($pwTrim.Length -gt 120) {
+                        Write-Err '密码过长（上限 120 字符），本次不开启。'
+                        Pause-Any
+                        continue
+                    }
+                    [void](Set-SeamlessSetting 'cooppassword' $pwTrim)
+                    Write-Ok ('联机密码已保存（' + $pwTrim.Length + ' 字符）；队友要用同一个密码。')
+                }
                 Set-SeamlessEnabled $true
                 Write-Ok '已开启 Seamless Co-op（下次启动游戏生效）'
                 Start-Sleep -Seconds 1
@@ -700,6 +779,20 @@ function Show-SeamlessMenu {
             Set-SeamlessEnabled $false
             Write-Ok '已关闭 Seamless Co-op'
             Start-Sleep -Seconds 1
+        } elseif ($sel -eq 'p') {
+            $pwNew = Read-Host '请输入联机密码（回车 = 取消）'
+            if ($null -ne $pwNew -and $pwNew.Trim()) {
+                $pwTrim = $pwNew.Trim()
+                if ($pwTrim.Length -gt 120) {
+                    Write-Err '密码过长（上限 120 字符）'
+                } else {
+                    [void](Set-SeamlessSetting 'cooppassword' $pwTrim)
+                    Write-Ok ('联机密码已保存（' + $pwTrim.Length + ' 字符）；队友要用同一个密码。')
+                }
+            } else {
+                Write-Host '  未修改密码。'
+            }
+            Pause-Any
         } elseif ($sel -eq 'q') {
             return
         }
@@ -861,6 +954,7 @@ function Start-YafGame {
         Write-Warn '[-NoLaunch] 只写配置，不启动 YAFSML。'
         return $true
     }
+    if (-not (Test-SeamlessReady)) { return $false }
     $proc = Get-Process -Name 'eldenring' -ErrorAction SilentlyContinue
     if ($proc) {
         Write-Warn '检测到游戏已在运行，先关闭旧进程...'
@@ -1076,7 +1170,9 @@ function Show-Status {
     if (Get-SeamlessEnabled) {
         $sState = '开启'
         if (-not (Test-Path -LiteralPath $SeamlessDll)) { $sState = '开启（但 DLL 缺失！）' }
+        if ((Get-SeamlessPassword) -eq '') { $sState += '（密码未设置！）' }
         Write-Host ('  Seamless   : ' + $sState + '（无缝联机，主菜单 [8] 切换）')
+        Write-Host ('  联机密码   : ' + (Get-SeamlessPasswordStatus))
     } else {
         Write-Host '  Seamless   : 关闭（无缝联机，主菜单 [8] 切换）'
     }
@@ -1161,6 +1257,7 @@ function Show-Help {
     Write-Host '  ... -Action seamlesson                       （开启 Seamless Co-op）'
     Write-Host '  ... -Action seamlessoff                      （关闭 Seamless Co-op）'
     Write-Host '  ... -Action seamless                         （查看/切换 Seamless 开关）'
+    Write-Host '  ... -Action seamlesspass -Password "xxx"     （设置联机密码，队友要用同一个）'
 }
 
 # ---------------------------------------------------------------- 入口
@@ -1227,13 +1324,26 @@ try {
                 if (-not (Test-Path -LiteralPath $SeamlessDll)) { Write-Err ('找不到 DLL：' + $SeamlessDll); exit 1 }
                 Set-SeamlessEnabled $true
                 Write-Ok 'Seamless Co-op 已开启（下次启动游戏生效）'
+                if ((Get-SeamlessPassword) -eq '') {
+                    Write-Warn '还没设置联机密码：进游戏会报 Fatal Error。用 -Action seamlesspass -Password "xxx" 或主菜单 [8] → [P] 设置。'
+                }
             }
             Show-Status
         }
         'seamlesson' {
             if (-not (Test-Path -LiteralPath $SeamlessDll)) { Write-Err ('找不到 DLL：' + $SeamlessDll + '（先解压到 _mods\SeamlessCoop）'); exit 1 }
+            if ((Get-SeamlessPassword) -eq '') { Write-Err 'Seamless Co-op 必须设置联机密码（cooppassword）才能启动，否则游戏会 Fatal Error。'; Write-Warn '先运行：-Action seamlesspass -Password "你的密码"（队友要用同一个密码）'; exit 1 }
             Set-SeamlessEnabled $true
             Write-Ok 'Seamless Co-op 已开启（下次启动游戏生效）'
+            Show-Status
+        }
+        'seamlesspass' {
+            if (-not $Password) { Write-Err '需要 -Password "你的密码"（1-120 字符）'; exit 1 }
+            $pwTrim = $Password.Trim()
+            if ($pwTrim.Length -lt 1 -or $pwTrim.Length -gt 120) { Write-Err '密码长度必须是 1-120 字符'; exit 1 }
+            if (-not (Test-Path -LiteralPath $SeamlessIni)) { Write-Err ('找不到配置文件：' + $SeamlessIni); exit 1 }
+            if (-not (Set-SeamlessSetting 'cooppassword' $pwTrim)) { Write-Err '写入 ersc_settings.ini 失败'; exit 1 }
+            Write-Ok ('Seamless 联机密码已设置（' + $pwTrim.Length + ' 字符）；队友要用同一个密码。')
             Show-Status
         }
         'seamlessoff' { Set-SeamlessEnabled $false; Write-Ok 'Seamless Co-op 已关闭'; Show-Status }

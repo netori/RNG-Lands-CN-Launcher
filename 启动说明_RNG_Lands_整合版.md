@@ -88,12 +88,15 @@ Seamless Co-op 是「固定集成」的：文件固定放 `_mods\SeamlessCoop\`�
 1. Nexus mod 510 下载 Seamless Co-op v2.0.1；
 2. 解压压缩包里 `SeamlessCoop\` 文件夹**里面的内容**到 `_mods\SeamlessCoop\`
    （形成 `_mods\SeamlessCoop\ersc.dll`、`ersc_settings.ini`、`locale\`、`crashpad\`）；
-3. 主菜单 `[8]` → `[1]` 开启（之后每次启动都会加载；关掉就完全不加载）。
+3. 主菜单 `[8]` → `[P]` 设置**联机密码**（队友要用同一个；不设置会报
+   `Fatal Error: Please enter a session password`）；
+4. 主菜单 `[8]` → `[1]` 开启（之后每次启动都会加载；关掉就完全不加载）。
 
 注意：
 
 - 联机存档 `ER0000.rnglands.co2`，与单机 `ER0000.rnglands` 分开；
-- 改 `_mods\SeamlessCoop\ersc_settings.ini` 里的 `cooppassword`（队友要一样）；
+- 必须设置 `cooppassword`（菜单 `[8]` → `[P]`，或改 `_mods\SeamlessCoop\ersc_settings.ini`），队友要一样；
+  为空时启动器会拒绝启动，免得进游戏才弹 Fatal Error；
 - 双方游戏版本 + Seamless 版本必须一致；
 - 和随机 / 其他 mod 一起用属于附加组合，出问题先 `[8]` 关掉再单机排查。
 
@@ -124,6 +127,7 @@ Seamless Co-op 是「固定集成」的：文件固定放 `_mods\SeamlessCoop\`�
   ```
   并把 `request=regulation:` 指到随机化输出的 `regulation.bin`。
 - 进游戏没变化：确认日志里 `[mod] added mod` 是哪个路径；无随机版应只有 `RNG_Lands_Base` 一行。
+- Seamless 弹 `Fatal Error: Please enter a session password`：联机密码为空 → 菜单 `[8]` → `[P]` 设置。
 - 游戏没启动：看日志；确认**不要用管理员身份运行**、游戏路径正确（菜单 `[6]` 可以重新选/自动检测）。
 - 敌人刷出时崩溃：把 `_launcher\YAFSML.ini.tpl` 里 `randomizer_crashfix=...|early` 改成不带 `|early`，
   或注释掉那一行（模板是唯一来源，生成的 ini 不用手改）。

@@ -111,16 +111,21 @@ YAFSML 注入式加载器统一起启动的小工具：
 1. 下载 Seamless Co-op v2.0.1（Nexus mod 510）；
 2. 把压缩包里 `SeamlessCoop\` 文件夹**里面的内容**解压到 `_mods\SeamlessCoop\`
    （形成 `_mods\SeamlessCoop\ersc.dll`、`ersc_settings.ini`、`locale\`、`crashpad\`）；
-3. 主菜单 `[8]` → `[1]` 开启。启动游戏时日志应出现
+3. 主菜单 `[8]` → `[P]` 设置**联机密码**（队友要用同一个；不设置的话 mod 会直接
+   报 `Fatal Error: Please enter a session password` 退出）；
+4. 主菜单 `[8]` → `[1]` 开启。启动游戏时日志应出现
    `[extdll] loaded external DLL seamlesscoop`。
 
 注意：
 
 - **存档**：开启后联机存档是 `ER0000.rnglands.co2`（与单机 `ER0000.rnglands` 分开）；
-- **密码**：改 `_mods\SeamlessCoop\ersc_settings.ini` 里的 `cooppassword`，队友填同一个；
+- **密码**：必须设置（菜单 `[8]` → `[P]`，或 `-Action seamlesspass -Password "xxx"`；
+  也可以直接改 `_mods\SeamlessCoop\ersc_settings.ini` 的 `cooppassword`），队友填同一个；
+  密码为空时启动器会直接拒绝启动，并提示先去设置；
 - **版本**：联机双方的游戏版本、Seamless 版本必须一致；
 - 与随机化 / 其他 mod 叠加属于附加组合，稳定性不保证：联机异常时先 `[8]` 关掉它，单机复现问题；
 - 换 Seamless 版本：直接替换 `_mods\SeamlessCoop\` 里的文件，开关状态不用动。
+- 报 `Fatal Error: Please enter a session password`：联机密码为空 → 菜单 `[8]` → `[P]` 设置。
 
 ## 实现要点
 
@@ -135,6 +140,8 @@ YAFSML 注入式加载器统一起启动的小工具：
 - 有随机模式会给 `RandomizerCrashFix.dll` 配 `|early`（基础+DLC 敌人一起随机时防崩溃）。
 - Seamless Co-op（菜单 `[8]`）开启时往 `[dll]` 追加 `seamlesscoop=<绝对路径>\ersc.dll`（不写加载条件），
   状态记在 `_launcher\seamless_enabled.txt`；关闭时这一行完全不出现。
+- Seamless 的联机密码在 `_mods\SeamlessCoop\ersc_settings.ini` 的 `[PASSWORD] cooppassword`；
+  为空时启动器拒绝启动（`Fatal Error: Please enter a session password`）。
 - 独立存档/不写 regulation 标记：`replace_save_filename=.rnglands` + `prevent_regulation_save_write=1`。
 - 存档扩展名 `.rnglands` 是本整合包独有的（v1.4.0 起）：以前用 `.cnv`，和 法魂 mod 的独立存档同名，
   两个 mod 来回切会看到同一份角色/进度。旧的 `ER0000.cnv` 不会被删改；想沿用旧进度就手动复制成
